@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Card from "../../components/Card";
 import Hero from "../../components/Hero";
 import Gallery from "../../components/Gallery";
@@ -14,6 +15,7 @@ interface ComponentProps {
 }
 
 export default function Result() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [components, setComponents] = useState<ComponentProps[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +120,7 @@ export default function Result() {
             <h1 className="text-xl font-bold text-red-600 mb-4">Oops!</h1>
             <p className="text-gray-700 mb-6">{error}</p>
             <button
-              onClick={() => (window.location.href = "/")}
+              onClick={() => router.push("/")}
               className="btn-primary text-white py-3 px-6 rounded-xl font-medium w-full animate-pulse-hover"
             >
               🔄 Try Again
@@ -134,7 +136,7 @@ export default function Result() {
       <div className="max-w-4xl mx-auto">
         <div className="mb-8 animate-fade-in">
           <button
-            onClick={() => (window.location.href = "/")}
+            onClick={() => router.push("/")}
             className="glass text-white py-3 px-6 rounded-xl font-medium hover:bg-white/30 transition-all duration-200 mb-4"
           >
             ← Back to Home
@@ -163,7 +165,7 @@ export default function Result() {
 
         <div className="mt-8 text-center">
           <button
-            onClick={() => (window.location.href = "/")}
+            onClick={() => router.push("/")}
             className="btn-primary text-white py-3 px-8 rounded-xl font-medium animate-pulse-hover"
           >
             🎨 Create Another

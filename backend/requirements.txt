@@ -1,10 +1,8 @@
-fastapi
-uvicorn
-langgraph
 langchain
 langchain-google-genai
 langchain-community
+langgraph
 python-dotenv
-pydantic
-google-generativeai
 duckduckgo-search
+fastapi
+uvicorn
