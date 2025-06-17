@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
+  const [userId, setUserId] = useState("demo-user");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
@@ -19,8 +20,9 @@ export default function Home() {
 
     setIsSubmitting(true);
 
-    // Store prompt in localStorage for the result page
+    // Store prompt and user_id in localStorage for the result page
     localStorage.setItem("userPrompt", prompt);
+    localStorage.setItem("userId", userId);
 
     // Navigate to result page
     router.push("/result");
@@ -40,6 +42,24 @@ export default function Home() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label
+                htmlFor="userId"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                User ID (for personalized responses)
+              </label>
+              <input
+                id="userId"
+                type="text"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                className="w-full px-4 py-2 border-0 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-400 focus:outline-none transition-all duration-200"
+                placeholder="Enter your user ID"
+                disabled={isSubmitting}
+              />
+            </div>
+
+            <div>
+              <label
                 htmlFor="prompt"
                 className="block text-sm font-medium text-gray-700 mb-3"
               >
@@ -50,7 +70,7 @@ export default function Home() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 className="w-full px-4 py-3 border-0 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-400 focus:outline-none transition-all duration-200 resize-none"
-                placeholder="e.g., Show me a beautiful weather card for today, or create a todo list..."
+                placeholder="e.g., Explain calculus concepts from my notes, or create a todo list..."
                 rows={4}
                 disabled={isSubmitting}
               />
@@ -92,8 +112,26 @@ export default function Home() {
           </form>
         </div>
 
-        <div className="mt-6 text-center">
-          <p className="text-white/60 text-sm">Powered by AI • Made with ❤️</p>
+        <div className="mt-6 space-y-4">
+          <div className="flex gap-4">
+            <button
+              onClick={() => router.push("/upload")}
+              className="flex-1 py-2 px-4 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+            >
+              📚 Upload Documents
+            </button>
+            <button
+              onClick={() => router.push(`/manage?user=${userId}`)}
+              className="flex-1 py-2 px-4 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors"
+            >
+              📖 Manage Documents
+            </button>
+          </div>
+          <div className="text-center">
+            <p className="text-white/60 text-sm">
+              Powered by AI with RAG • Made with ❤️
+            </p>
+          </div>
         </div>
       </div>
     </div>

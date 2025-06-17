@@ -2,6 +2,14 @@
 
 This streamlined backend system uses LangGraph to create intelligent user interfaces with smart decision-making about when to search for content and images.
 
+## Sources
+
+We referenced heavily these resources:
+
+- https://medium.com/the-ai-forum/build-a-reliable-rag-agent-using-langgraph-2694d55995cd
+
+- https://github.com/google-gemini/gemini-fullstack-langgraph-quickstart
+
 ## 🧠 Intelligent Decision Making
 
 The system includes a **Decision Agent** that analyzes each prompt and intelligently determines:

@@ -5,11 +5,14 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.tools import DuckDuckGoSearchResults
 from langgraph.graph import StateGraph, END
-from langchain.schema import HumanMessage, AIMessage
+from langchain.schema import HumanMessage, AIMessage, Document
 from langchain_core.messages import BaseMessage
 import json
 import asyncio
 import operator
+
+# Import simplified RAG components
+from rag_manager import rag_manager
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -33,43 +36,64 @@ class AgentState(TypedDict):
     prompt: str
     search_results: List[Dict]
     image_results: List[Dict]
+    rag_results: List[Document]
+    rag_context: str
     final_ui: Dict[str, Any]
     decision_path: Literal[
-        "search_and_images", "search_only", "images_only", "ui_generator"
+        "search_and_images",
+        "search_only",
+        "images_only",
+        "rag_enhanced",
+        "rag_only",
+        "ui_generator",
     ]
+    user_id: str
+    use_rag: bool
 
 
-# Decision Agent - Returns routing decision
+# Decision Agent - Returns routing decision with RAG awareness
 async def decision_agent_node(state: AgentState):
-    """Agent that decides the routing path based on what's needed"""
+    """Agent that decides the routing path based on what's needed including RAG"""
     logging.info("Decision agent analyzing prompt")
     prompt = state["prompt"]
+
+    # Check if RAG should be used
+    rag_decision = rag_manager.should_use_rag(prompt)
+    use_rag = rag_decision["use_rag"]
 
     decision_prompt = f"""Analyze this user prompt and decide the best path:
 
 USER PROMPT: "{prompt}"
 
+RAG ANALYSIS:
+- Should use educational materials: {use_rag}
+- Reason: {rag_decision["reason"]}
+
 Consider these guidelines:
-- SEARCH is needed for: current events, detailed information, recent developments, factual research, news, statistics, complex topics needing external data
-- SEARCH is NOT needed for: simple factual questions the LLM knows, basic definitions, general knowledge, simple math, obvious answers
+- RAG is needed for: educational queries, learning content, academic topics when user has uploaded materials
+- SEARCH is needed for: current events, detailed information, recent developments, factual research, news, statistics
+- SEARCH is NOT needed for: simple factual questions the LLM knows, basic definitions, general knowledge, simple math
 - IMAGES are needed for: visual content, galleries, portfolios, products, places, people, things that benefit from visual representation
 - IMAGES are NOT needed for: text-heavy content, lists, pure information, abstract concepts, technical documentation
 
 Based on what's needed, choose the best path:
-- "search_and_images" - if both search and images are needed
-- "search_only" - if only search is needed
-- "images_only" - if only images are needed
-- "ui_generator" - if neither search nor images are needed (use LLM knowledge directly)
+- "rag_enhanced" - if RAG + search/images are needed (educational query with external context)
+- "rag_only" - if only RAG is needed (educational query from user materials only)
+- "search_and_images" - if both search and images are needed (no RAG)
+- "search_only" - if only search is needed (no RAG)
+- "images_only" - if only images are needed (no RAG)
+- "ui_generator" - if none are needed (use LLM knowledge directly)
 
 Examples:
+- "Explain calculus from my notes" → "rag_only" (user materials sufficient)
+- "Show me physics concepts with current examples" → "rag_enhanced" (user materials + external search)
 - "What are two countries in North America?" → "images_only" (simple question, but images helpful)
-- "Write a blog about climate change" → "search_only" (needs recent data, mostly text)  
-- "Show me modern architecture" → "search_and_images" (needs current examples + visuals)
+- "Write a blog about climate change" → "search_only" (needs recent data, mostly text)
 - "What is 2+2?" → "ui_generator" (simple math, no external data needed)
 
 Return ONLY a JSON object:
 {{
-    "path": "search_and_images|search_only|images_only|ui_generator",
+    "path": "rag_enhanced|rag_only|search_and_images|search_only|images_only|ui_generator",
     "reasoning": "brief explanation"
 }}"""
 
@@ -89,9 +113,12 @@ Return ONLY a JSON object:
         return {
             **state,
             "decision_path": path,
+            "use_rag": use_rag,
             "messages": state["messages"]
             + [
-                AIMessage(content=f"Decision: {path} - {decision.get('reasoning', '')}")
+                AIMessage(
+                    content=f"Decision: {path} - {decision.get('reasoning', '')} (RAG: {use_rag})"
+                )
             ],
         }
 
@@ -101,6 +128,7 @@ Return ONLY a JSON object:
         return {
             **state,
             "decision_path": "search_and_images",
+            "use_rag": False,
             "messages": state["messages"]
             + [AIMessage(content=f"Decision agent failed, using fallback: {str(e)}")],
         }
@@ -153,6 +181,107 @@ async def image_agent_node(state: AgentState):
             "image_results": [],
             "messages": state["messages"]
             + [AIMessage(content=f"Image search failed: {str(e)}")],
+        }
+
+
+# RAG Agent - Retrieves relevant educational materials
+async def rag_agent_node(state: AgentState):
+    """Agent responsible for retrieving relevant educational materials"""
+    logging.info("RAG agent processing request")
+    prompt = state["prompt"]
+    user_id = state.get("user_id", "anonymous")
+
+    try:
+        # Retrieve relevant documents
+        documents = rag_manager.retrieve_documents(prompt, user_id)
+
+        # Format context
+        rag_context = rag_manager.format_docs(documents)
+
+        return {
+            **state,
+            "rag_results": documents,
+            "rag_context": rag_context,
+            "messages": state["messages"]
+            + [
+                AIMessage(
+                    content=f"Found {len(documents)} relevant educational materials"
+                )
+            ],
+        }
+
+    except Exception as e:
+        logging.error(f"RAG agent error: {e}")
+        return {
+            **state,
+            "rag_results": [],
+            "rag_context": "",
+            "messages": state["messages"]
+            + [AIMessage(content=f"RAG search failed: {str(e)}")],
+        }
+
+
+# RAG Enhanced Agent - Combines RAG with search/images
+async def rag_enhanced_node(state: AgentState):
+    """Agent that combines RAG with search and/or images"""
+    logging.info("RAG enhanced agent processing request")
+    prompt = state["prompt"]
+    user_id = state.get("user_id", "anonymous")
+
+    try:
+        # Run RAG, search, and images in parallel
+        rag_task = asyncio.create_task(
+            asyncio.to_thread(rag_manager.retrieve_documents, prompt, user_id)
+        )
+        search_task = asyncio.create_task(asyncio.to_thread(search_tool.invoke, prompt))
+        image_task = asyncio.create_task(
+            asyncio.to_thread(image_search_tool.invoke, prompt)
+        )
+
+        rag_docs, search_results, image_results = await asyncio.gather(
+            rag_task, search_task, image_task, return_exceptions=True
+        )
+
+        # Handle potential exceptions
+        if isinstance(rag_docs, Exception):
+            logging.error(f"RAG error: {rag_docs}")
+            rag_docs = []
+
+        if isinstance(search_results, Exception):
+            logging.error(f"Search error: {search_results}")
+            search_results = []
+
+        if isinstance(image_results, Exception):
+            logging.error(f"Image error: {image_results}")
+            image_results = []
+
+        # Format RAG context
+        rag_context = rag_manager.format_docs(rag_docs)
+
+        return {
+            **state,
+            "rag_results": rag_docs,
+            "rag_context": rag_context,
+            "search_results": search_results,
+            "image_results": image_results,
+            "messages": state["messages"]
+            + [
+                AIMessage(
+                    content=f"Found {len(rag_docs)} educational materials, {len(search_results)} search results, and {len(image_results)} images"
+                )
+            ],
+        }
+
+    except Exception as e:
+        logging.error(f"RAG enhanced agent error: {e}")
+        return {
+            **state,
+            "rag_results": [],
+            "rag_context": "",
+            "search_results": [],
+            "image_results": [],
+            "messages": state["messages"]
+            + [AIMessage(content=f"RAG enhanced search failed: {str(e)}")],
         }
 
 
@@ -213,6 +342,8 @@ async def ui_generator_node(state: AgentState):
     prompt = state["prompt"]
     search_results = state.get("search_results", [])
     image_results = state.get("image_results", [])
+    rag_context = state.get("rag_context", "")
+    rag_results = state.get("rag_results", [])
 
     # Prepare context for UI generation
     search_context = ""
@@ -226,6 +357,19 @@ async def ui_generator_node(state: AgentState):
             image_context += (
                 f"Image {i + 1}: {img.get('title', '')} - {img.get('image', '')}\n"
             )
+
+    # Prepare RAG context summary
+    rag_summary = ""
+    if rag_results:
+        rag_summary = f"\nEDUCATIONAL MATERIALS AVAILABLE ({len(rag_results)} relevant excerpts):\n"
+        for i, doc in enumerate(rag_results[:3]):  # Show summary of first 3 docs
+            filename = doc.metadata.get("filename", "Unknown")
+            content_preview = (
+                doc.page_content[:150] + "..."
+                if len(doc.page_content) > 150
+                else doc.page_content
+            )
+            rag_summary += f"- {filename}: {content_preview}\n"
 
     ui_prompt = f"""You are a UI/UX expert creating beautiful, diverse user interfaces. Always aim for variety and visual interest!
 
@@ -349,7 +493,14 @@ An example is given below:
 # Routing function for the decision agent, simply returns the decision path in the state
 def route_decision(
     state: AgentState,
-) -> Literal["search_and_images", "search_only", "images_only", "ui_generator"]:
+) -> Literal[
+    "search_and_images",
+    "search_only",
+    "images_only",
+    "rag_enhanced",
+    "rag_only",
+    "ui_generator",
+]:
     """Route based on the decision agent's choice"""
     decision_path = state.get("decision_path", "ui_generator")
     logging.info(f"Routing to: {decision_path}")
@@ -361,11 +512,13 @@ def create_graph_workflow():
     """Create a graph workflow with natural conditional routing"""
     workflow = StateGraph(AgentState)
 
-    # Add nodes (no separate direct_ui node needed)
+    # Add nodes including RAG nodes
     workflow.add_node("decision", decision_agent_node)
     workflow.add_node("search_and_images", search_and_images_node)
     workflow.add_node("search_only", search_agent_node)
     workflow.add_node("images_only", image_agent_node)
+    workflow.add_node("rag_enhanced", rag_enhanced_node)
+    workflow.add_node("rag_only", rag_agent_node)
     workflow.add_node("ui_generator", ui_generator_node)
 
     # Set entry point
@@ -379,6 +532,8 @@ def create_graph_workflow():
             "search_and_images": "search_and_images",
             "search_only": "search_only",
             "images_only": "images_only",
+            "rag_enhanced": "rag_enhanced",
+            "rag_only": "rag_only",
             "ui_generator": "ui_generator",
         },
     )
@@ -387,6 +542,8 @@ def create_graph_workflow():
     workflow.add_edge("search_and_images", "ui_generator")
     workflow.add_edge("search_only", "ui_generator")
     workflow.add_edge("images_only", "ui_generator")
+    workflow.add_edge("rag_enhanced", "ui_generator")
+    workflow.add_edge("rag_only", "ui_generator")
 
     # Final edge to END
     workflow.add_edge("ui_generator", END)
@@ -398,7 +555,7 @@ def create_graph_workflow():
 graph_workflow = create_graph_workflow()
 
 
-async def process_prompt(prompt: str) -> Dict[str, Any]:
+async def process_prompt(prompt: str, user_id: str = "anonymous") -> Dict[str, Any]:
     """Main function to process a prompt using the graph-based workflow"""
     logging.info(f"Processing prompt with graph workflow: {prompt}")
 
@@ -409,7 +566,11 @@ async def process_prompt(prompt: str) -> Dict[str, Any]:
             "prompt": prompt,
             "search_results": [],
             "image_results": [],
+            "rag_results": [],
+            "rag_context": "",
             "final_ui": {},
+            "user_id": user_id,
+            "use_rag": False,
         }
 
         # Run the workflow

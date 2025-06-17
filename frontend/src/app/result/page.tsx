@@ -22,13 +22,14 @@ export default function Result() {
 
   useEffect(() => {
     const prompt = localStorage.getItem("userPrompt");
+    const userId = localStorage.getItem("userId") || "anonymous";
     if (prompt) {
       fetch("http://localhost:8000/api/agent", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, user_id: userId }),
       })
         .then((res) => {
           if (!res.ok) {

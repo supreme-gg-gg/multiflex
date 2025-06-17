@@ -203,3 +203,5 @@ dist/
 .next/
 out/
 .vercel/
+
+.DS_Store
