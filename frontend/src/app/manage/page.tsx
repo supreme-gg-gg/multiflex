@@ -96,7 +96,7 @@ Preview: ${result.context_preview || "No context"}`);
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">
+          <h1 className="text-4xl font-bold text-purple-400 mb-4">
             📖 Document Management
           </h1>
           <p className="text-white/80 text-lg">
@@ -115,7 +115,7 @@ Preview: ${result.context_preview || "No context"}`);
                 type="text"
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
-                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                className="flex-1 px-4 py-2 border rounded-lg focus:outline-none"
                 placeholder="Enter user ID"
               />
               <button

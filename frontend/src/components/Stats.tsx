@@ -11,11 +11,11 @@ interface StatsProps {
 
 export default function Stats({ title, data }: StatsProps) {
   return (
-    <div className="card p-6">
+    <div className="response-card">
       <div className="flex items-start space-x-3 mb-6">
-        <div className="w-2 h-16 bg-gradient-to-b from-cyan-400 to-blue-500 rounded-full"></div>
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+        <div className="w-1 h-12 bg-cyan-500 rounded-full flex-shrink-0"></div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
         </div>
       </div>
 
@@ -23,10 +23,10 @@ export default function Stats({ title, data }: StatsProps) {
         {data.map((stat, index) => (
           <div
             key={index}
-            className="text-center p-4 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all"
+            className="text-center p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
           >
-            {stat.icon && <div className="text-3xl mb-2">{stat.icon}</div>}
-            <div className="text-3xl font-bold text-gray-800 mb-1">
+            {stat.icon && <div className="text-2xl mb-2">{stat.icon}</div>}
+            <div className="text-2xl font-bold text-gray-900 mb-1">
               {stat.value}
             </div>
             <div className="text-sm text-gray-600">{stat.label}</div>

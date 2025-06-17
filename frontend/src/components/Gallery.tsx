@@ -10,11 +10,11 @@ interface GalleryProps {
 
 export default function Gallery({ title, images }: GalleryProps) {
   return (
-    <div className="card p-6">
+    <div className="response-card">
       <div className="flex items-start space-x-3 mb-6">
-        <div className="w-2 h-16 bg-gradient-to-b from-green-400 to-blue-500 rounded-full"></div>
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+        <div className="w-1 h-12 bg-green-500 rounded-full flex-shrink-0"></div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
         </div>
       </div>
 
@@ -25,7 +25,7 @@ export default function Gallery({ title, images }: GalleryProps) {
               <img
                 src={image.url}
                 alt={image.caption}
-                className="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-300"
+                className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
               />
             </div>
             <p className="text-sm text-gray-600 text-center">{image.caption}</p>

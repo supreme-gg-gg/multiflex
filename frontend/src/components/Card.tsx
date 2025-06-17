@@ -7,7 +7,7 @@ interface CardProps {
 
 export default function Card({ title, content, image, badge }: CardProps) {
   return (
-    <div className="card p-6">
+    <div className="response-card">
       {image && (
         <div className="mb-4 overflow-hidden rounded-lg">
           <img
@@ -18,17 +18,17 @@ export default function Card({ title, content, image, badge }: CardProps) {
         </div>
       )}
       <div className="flex items-start space-x-3">
-        <div className="w-2 h-16 bg-gradient-to-b from-purple-400 to-blue-500 rounded-full"></div>
-        <div className="flex-1">
+        <div className="w-1 h-12 bg-blue-500 rounded-full flex-shrink-0"></div>
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
             {badge && (
-              <span className="px-3 py-1 bg-gradient-to-r from-purple-400 to-blue-500 text-white text-sm rounded-full">
+              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                 {badge}
               </span>
             )}
           </div>
-          <p className="text-gray-600 leading-relaxed text-lg">{content}</p>
+          <p className="text-gray-600 leading-relaxed">{content}</p>
         </div>
       </div>
     </div>
