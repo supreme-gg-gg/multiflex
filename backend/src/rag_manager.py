@@ -1,7 +1,4 @@
-"""Simplified RAG implementation using LangChain community components."""
-
 import os
-import tempfile
 import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -55,23 +52,6 @@ class RAGManager:
         # For now, create in-memory vectorstore that will be recreated on restart
         self.vectorstore = None
         self.retriever = None
-
-        # Initialize router prompt
-        self.router_prompt = PromptTemplate(
-            template="""You are an expert at routing a user question to a vectorstore or web search. 
-            Use the vectorstore for questions about educational content, learning materials, academic topics, 
-            concepts from uploaded documents, homework help, or any topic that could be answered from study materials.
-            You do not need to be stringent with the keywords. Otherwise, use web-search for current events, 
-            news, or information not typically found in educational materials.
-            
-            Give a binary choice 'vectorstore' or 'web_search' based on the question.
-            Return a JSON with a single key 'datasource' and no preamble or explanation.
-            
-            Question to route: {question}""",
-            input_variables=["question"],
-        )
-
-        self.question_router = self.router_prompt | self.llm | JsonOutputParser()
 
         # Initialize retrieval grader
         self.retrieval_grader_prompt = PromptTemplate(
@@ -142,13 +122,14 @@ class RAGManager:
                     documents=documents,
                     embedding=self.embeddings,
                     collection_name="educational_materials",
+                    persist_directory="./vectorstore_data",
                 )
             else:
                 # Add to existing vectorstore
                 self.vectorstore.add_documents(documents)
 
             # Update retriever
-            self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
+            self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 3})
 
             logger.info(f"Added {len(documents)} documents to vectorstore")
             return True
@@ -156,38 +137,6 @@ class RAGManager:
         except Exception as e:
             logger.error(f"Error adding documents to vectorstore: {str(e)}")
             return False
-
-    def should_use_rag(self, question: str) -> Dict[str, Any]:
-        """Determine if RAG should be used for this question."""
-        try:
-            if self.vectorstore is None:
-                return {
-                    "use_rag": False,
-                    "reason": "No documents available",
-                    "datasource": "web_search",
-                }
-
-            # Use router to decide
-            routing_decision = self.question_router.invoke({"question": question})
-            datasource = routing_decision.get("datasource", "web_search")
-
-            use_rag = datasource == "vectorstore"
-
-            logger.info(f"Routing decision: {datasource} for question: {question}")
-
-            return {
-                "use_rag": use_rag,
-                "reason": f"Router decided: {datasource}",
-                "datasource": datasource,
-            }
-
-        except Exception as e:
-            logger.error(f"Error in routing decision: {str(e)}")
-            return {
-                "use_rag": False,
-                "reason": f"Error: {str(e)}",
-                "datasource": "web_search",
-            }
 
     def retrieve_documents(
         self, question: str, user_id: Optional[str] = None

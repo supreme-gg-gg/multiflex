@@ -1,351 +1,240 @@
+# filepath: /Users/supremegg/Documents/GitHub/nus-hacks/backend/src/agent.py
 import os
-from typing import Dict, List, Any, TypedDict, Annotated, Literal
+from typing import Dict, List, Any, TypedDict, Annotated
 import logging
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.tools import DuckDuckGoSearchResults
+from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph import StateGraph, END
 from langchain.schema import HumanMessage, AIMessage, Document
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, ToolMessage
 import json
-import asyncio
 import operator
-
-# Import simplified RAG components
-from rag_manager import rag_manager
+import random
+from tools import (
+    research_tools,
+    ui_tools,
+    web_search_tool_fn,
+    image_search_tool_fn,
+    rag_search_tool_fn,
+    ui_image_search_tool_fn,
+    imagen_generate_tool_fn,
+)
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-# Initialize the LLM
-llm = ChatGoogleGenerativeAI(
+# Initialize the LLMs
+research_llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
     google_api_key=os.getenv("GOOGLE_API_KEY"),
 )
 
-# Initialize search tools
-search_tool = DuckDuckGoSearchResults(output_format="list", max_results=5)
-image_search_tool = DuckDuckGoSearchResults(
-    output_format="list", backend="images", max_results=8
+ui_llm = ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash",
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    temperature=0.9,  # Higher creativity for UI generation
 )
 
+# Bind tools to respective LLMs
+research_llm_with_tools = research_llm.bind_tools(research_tools)
+ui_llm_with_tools = ui_llm.bind_tools(ui_tools)
 
-# Define the state structure with routing path
+
+# Define knowledge container
+class KnowledgeState(TypedDict):
+    docs: List[Document]
+    search: List[Dict[str, Any]]
+    images: List[Dict[str, Any]]
+    ui_images: List[Dict[str, Any]]
+    generated_images: Dict[str, str]  # prompt -> image_data mapping
+
+
+# Define the state structure
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
+    ui_messages: Annotated[List[BaseMessage], operator.add]
     prompt: str
-    search_results: List[Dict]
-    image_results: List[Dict]
-    rag_results: List[Document]
-    rag_context: str
+    knowledge: KnowledgeState
+    design_plan: str  # Creative design plan from UI Designer
     final_ui: Dict[str, Any]
-    decision_path: Literal[
-        "search_and_images",
-        "search_only",
-        "images_only",
-        "rag_enhanced",
-        "rag_only",
-        "ui_generator",
-    ]
     user_id: str
-    use_rag: bool
+    iteration_count: int
 
 
-# Decision Agent - Returns routing decision with RAG awareness
-async def decision_agent_node(state: AgentState):
-    """Agent that decides the routing path based on what's needed including RAG"""
-    logging.info("Decision agent analyzing prompt")
-    prompt = state["prompt"]
+# Custom tool node that updates knowledge state
+def custom_tool_node(state: AgentState) -> Dict[str, Any]:
+    """Execute tools and update knowledge state."""
+    # Initialize knowledge if not present
+    if "knowledge" not in state:
+        state["knowledge"] = {
+            "docs": [],
+            "search": [],
+            "images": [],
+            "ui_images": [],
+            "generated_images": {},
+        }
 
-    # Check if RAG should be used
-    rag_decision = rag_manager.should_use_rag(prompt)
-    use_rag = rag_decision["use_rag"]
+    # Get the last message (should contain tool calls)
+    last_message = state["messages"][-1]
 
-    decision_prompt = f"""Analyze this user prompt and decide the best path:
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        tool_outputs = []
 
-USER PROMPT: "{prompt}"
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
 
-RAG ANALYSIS:
-- Should use educational materials: {use_rag}
-- Reason: {rag_decision["reason"]}
+            # Execute the tool
+            if tool_name == "web_search_tool_fn":
+                result = web_search_tool_fn.invoke(tool_args)
+                state["knowledge"]["search"].extend(result)
+            elif tool_name == "image_search_tool_fn":
+                result = image_search_tool_fn.invoke(tool_args)
+                state["knowledge"]["images"].extend(result)
+            elif tool_name == "rag_search_tool_fn":
+                result = rag_search_tool_fn.invoke(tool_args)
+                state["knowledge"]["docs"].extend(result)
 
-Consider these guidelines:
-- RAG is needed for: educational queries, learning content, academic topics when user has uploaded materials
-- SEARCH is needed for: current events, detailed information, recent developments, factual research, news, statistics
-- SEARCH is NOT needed for: simple factual questions the LLM knows, basic definitions, general knowledge, simple math
-- IMAGES are needed for: visual content, galleries, portfolios, products, places, people, things that benefit from visual representation
-- IMAGES are NOT needed for: text-heavy content, lists, pure information, abstract concepts, technical documentation
+            logging.info(
+                f"Tool '{tool_name}' executed with args: {tool_args}, result length: {len(result) if isinstance(result, list) else 'N/A'}"
+            )
 
-Based on what's needed, choose the best path:
-- "rag_enhanced" - if RAG + search/images are needed (educational query with external context)
-- "rag_only" - if only RAG is needed (educational query from user materials only)
-- "search_and_images" - if both search and images are needed (no RAG)
-- "search_only" - if only search is needed (no RAG)
-- "images_only" - if only images are needed (no RAG)
-- "ui_generator" - if none are needed (use LLM knowledge directly)
-
-Examples:
-- "Explain calculus from my notes" → "rag_only" (user materials sufficient)
-- "Show me physics concepts with current examples" → "rag_enhanced" (user materials + external search)
-- "What are two countries in North America?" → "images_only" (simple question, but images helpful)
-- "Write a blog about climate change" → "search_only" (needs recent data, mostly text)
-- "What is 2+2?" → "ui_generator" (simple math, no external data needed)
-
-Return ONLY a JSON object:
-{{
-    "path": "rag_enhanced|rag_only|search_and_images|search_only|images_only|ui_generator",
-    "reasoning": "brief explanation"
-}}"""
-
-    try:
-        response = llm.invoke([HumanMessage(content=decision_prompt)])
-        content = response.content.strip()
-
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-
-        decision = json.loads(content)
-        path = decision.get("path", "search_and_images")  # Safe default
-
-        return {
-            **state,
-            "decision_path": path,
-            "use_rag": use_rag,
-            "messages": state["messages"]
-            + [
-                AIMessage(
-                    content=f"Decision: {path} - {decision.get('reasoning', '')} (RAG: {use_rag})"
+            # Create tool message
+            tool_outputs.append(
+                ToolMessage(
+                    content=str(result),
+                    name=tool_name,
+                    tool_call_id=tool_call["id"],
                 )
-            ],
-        }
-
-    except Exception as e:
-        logging.error(f"Decision agent error: {e}")
-        # Default to safe fallback
-        return {
-            **state,
-            "decision_path": "search_and_images",
-            "use_rag": False,
-            "messages": state["messages"]
-            + [AIMessage(content=f"Decision agent failed, using fallback: {str(e)}")],
-        }
-
-
-# Search Agent
-async def search_agent_node(state: AgentState):
-    """Agent responsible for searching content"""
-    logging.info("Search agent processing request")
-    prompt = state["prompt"]
-
-    try:
-        search_results = search_tool.invoke(prompt)
-        return {
-            **state,
-            "search_results": search_results,
-            "messages": state["messages"]
-            + [AIMessage(content=f"Found {len(search_results)} search results")],
-        }
-
-    except Exception as e:
-        logging.error(f"Search agent error: {e}")
-        return {
-            **state,
-            "search_results": [],
-            "messages": state["messages"]
-            + [AIMessage(content=f"Search failed: {str(e)}")],
-        }
-
-
-# Image Agent
-async def image_agent_node(state: AgentState):
-    """Agent responsible for finding images"""
-    logging.info("Image agent processing request")
-    prompt = state["prompt"]
-
-    try:
-        image_results = image_search_tool.invoke(prompt)
-        return {
-            **state,
-            "image_results": image_results,
-            "messages": state["messages"]
-            + [AIMessage(content=f"Found {len(image_results)} image results")],
-        }
-
-    except Exception as e:
-        logging.error(f"Image agent error: {e}")
-        return {
-            **state,
-            "image_results": [],
-            "messages": state["messages"]
-            + [AIMessage(content=f"Image search failed: {str(e)}")],
-        }
-
-
-# RAG Agent - Retrieves relevant educational materials
-async def rag_agent_node(state: AgentState):
-    """Agent responsible for retrieving relevant educational materials"""
-    logging.info("RAG agent processing request")
-    prompt = state["prompt"]
-    user_id = state.get("user_id", "anonymous")
-
-    try:
-        # Retrieve relevant documents
-        documents = rag_manager.retrieve_documents(prompt, user_id)
-
-        # Format context
-        rag_context = rag_manager.format_docs(documents)
+            )
 
         return {
             **state,
-            "rag_results": documents,
-            "rag_context": rag_context,
-            "messages": state["messages"]
-            + [
-                AIMessage(
-                    content=f"Found {len(documents)} relevant educational materials"
+            "messages": state["messages"] + tool_outputs,
+        }
+
+    return state
+
+
+# UI tool node that updates UI-specific knowledge
+def ui_tool_node(state: AgentState) -> Dict[str, Any]:
+    """Execute UI tools and update knowledge state."""
+    # Initialize knowledge if not present
+    if "knowledge" not in state:
+        state["knowledge"] = {
+            "docs": [],
+            "search": [],
+            "images": [],
+            "ui_images": [],
+            "generated_images": {},
+        }
+
+    # Get the last UI message (should contain tool calls)
+    last_message = state["ui_messages"][-1]
+
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        tool_outputs = []
+
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+
+            # Execute the tool
+            if tool_name == "ui_image_search_tool_fn":
+                result = ui_image_search_tool_fn.invoke(tool_args)
+                state["knowledge"]["ui_images"].extend(result)
+            elif tool_name == "imagen_generate_tool_fn":
+                result = imagen_generate_tool_fn.invoke(tool_args)
+                # Store mapping of prompt to image data
+                image_prompt = tool_args.get("prompt", "generated_image")
+                state["knowledge"]["generated_images"][image_prompt] = result
+
+            logging.info(f"UI Tool '{tool_name}' executed with args: {tool_args}")
+
+            # Create tool message
+            tool_outputs.append(
+                ToolMessage(
+                    content=str(result),
+                    name=tool_name,
+                    tool_call_id=tool_call["id"],
                 )
-            ],
-        }
-
-    except Exception as e:
-        logging.error(f"RAG agent error: {e}")
-        return {
-            **state,
-            "rag_results": [],
-            "rag_context": "",
-            "messages": state["messages"]
-            + [AIMessage(content=f"RAG search failed: {str(e)}")],
-        }
-
-
-# RAG Enhanced Agent - Combines RAG with search/images
-async def rag_enhanced_node(state: AgentState):
-    """Agent that combines RAG with search and/or images"""
-    logging.info("RAG enhanced agent processing request")
-    prompt = state["prompt"]
-    user_id = state.get("user_id", "anonymous")
-
-    try:
-        # Run RAG, search, and images in parallel
-        rag_task = asyncio.create_task(
-            asyncio.to_thread(rag_manager.retrieve_documents, prompt, user_id)
-        )
-        search_task = asyncio.create_task(asyncio.to_thread(search_tool.invoke, prompt))
-        image_task = asyncio.create_task(
-            asyncio.to_thread(image_search_tool.invoke, prompt)
-        )
-
-        rag_docs, search_results, image_results = await asyncio.gather(
-            rag_task, search_task, image_task, return_exceptions=True
-        )
-
-        # Handle potential exceptions
-        if isinstance(rag_docs, Exception):
-            logging.error(f"RAG error: {rag_docs}")
-            rag_docs = []
-
-        if isinstance(search_results, Exception):
-            logging.error(f"Search error: {search_results}")
-            search_results = []
-
-        if isinstance(image_results, Exception):
-            logging.error(f"Image error: {image_results}")
-            image_results = []
-
-        # Format RAG context
-        rag_context = rag_manager.format_docs(rag_docs)
+            )
 
         return {
             **state,
-            "rag_results": rag_docs,
-            "rag_context": rag_context,
-            "search_results": search_results,
-            "image_results": image_results,
-            "messages": state["messages"]
-            + [
-                AIMessage(
-                    content=f"Found {len(rag_docs)} educational materials, {len(search_results)} search results, and {len(image_results)} images"
-                )
-            ],
+            "ui_messages": state["ui_messages"] + tool_outputs,
         }
 
-    except Exception as e:
-        logging.error(f"RAG enhanced agent error: {e}")
-        return {
-            **state,
-            "rag_results": [],
-            "rag_context": "",
-            "search_results": [],
-            "image_results": [],
-            "messages": state["messages"]
-            + [AIMessage(content=f"RAG enhanced search failed: {str(e)}")],
+    return state
+
+
+# Research Agent - consolidates RAG, web search, and image search
+def research_agent_node(state: AgentState) -> Dict[str, Any]:
+    """Research agent that uses tools to gather knowledge and updates state."""
+    logging.info("Research agent processing request")
+
+    # Initialize knowledge if not present
+    if "knowledge" not in state:
+        state["knowledge"] = {
+            "docs": [],
+            "search": [],
+            "images": [],
+            "ui_images": [],
+            "generated_images": {},
         }
 
+    # Initialize iteration count if not present
+    if "iteration_count" not in state:
+        state["iteration_count"] = 0
 
-# Combined Search and Images Node
-async def search_and_images_node(state: AgentState):
-    """Agent that handles both search and images in parallel"""
-    logging.info("Processing search and images in parallel")
-    prompt = state["prompt"]
+    # Increment iteration count
+    state["iteration_count"] += 1
 
-    try:
-        # Run both search and images in parallel
-        search_task = asyncio.create_task(asyncio.to_thread(search_tool.invoke, prompt))
-        image_task = asyncio.create_task(
-            asyncio.to_thread(image_search_tool.invoke, prompt)
-        )
+    # Stop after 3 iterations to prevent infinite loops
+    if state["iteration_count"] > 3:
+        logging.info("Max iterations reached, proceeding to UI generation")
+        return {**state}
 
-        search_results, image_results = await asyncio.gather(
-            search_task, image_task, return_exceptions=True
-        )
+    # Call LLM with tools - it will decide which tools to use
+    response = research_llm_with_tools.invoke(state["messages"])
 
-        # Handle potential exceptions
-        if isinstance(search_results, Exception):
-            logging.error(f"Search error: {search_results}")
-            search_results = []
+    # Update messages with the LLM response
+    updated_messages = state["messages"] + [response]
 
-        if isinstance(image_results, Exception):
-            logging.error(f"Image error: {image_results}")
-            image_results = []
-
-        return {
-            **state,
-            "search_results": search_results,
-            "image_results": image_results,
-            "messages": state["messages"]
-            + [
-                AIMessage(
-                    content=f"Found {len(search_results)} search results and {len(image_results)} images"
-                )
-            ],
-        }
-
-    except Exception as e:
-        logging.error(f"Combined search and images error: {e}")
-        return {
-            **state,
-            "search_results": [],
-            "image_results": [],
-            "messages": state["messages"]
-            + [AIMessage(content=f"Search and images failed: {str(e)}")],
-        }
+    return {**state, "messages": updated_messages}
 
 
-# UI Generator - Creates components based on available data
-async def ui_generator_node(state: AgentState):
-    """Generate UI components based on prompt and available data"""
-    logging.info("UI generator creating components")
+# UI condition checker for tool routing
+def ui_tools_condition(state: AgentState):
+    """Check if UI tools should be called."""
+    if "ui_messages" not in state or not state["ui_messages"]:
+        return END
+
+    last_message = state["ui_messages"][-1]
+
+    # Check if the last message has tool calls
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "ui_tools"
+    else:
+        return END
+
+
+# UI Designer Agent - Creates a creative design plan with tool support
+async def ui_designer_node(state: AgentState):
+    """UI Designer creates a comprehensive design plan with visual assets."""
+    logging.info("UI Designer creating design plan")
 
     prompt = state["prompt"]
-    search_results = state.get("search_results", [])
-    image_results = state.get("image_results", [])
-    rag_context = state.get("rag_context", "")
-    rag_results = state.get("rag_results", [])
+    docs = state["knowledge"]["docs"]
+    search_results = state["knowledge"]["search"]
+    image_results = state["knowledge"]["images"]
 
-    # Prepare context for UI generation
+    # Initialize UI messages if not present
+    if "ui_messages" not in state:
+        state["ui_messages"] = []
+
+    # Prepare context for design planning
     search_context = ""
     if search_results:
         for i, result in enumerate(search_results[:5]):
@@ -360,57 +249,184 @@ async def ui_generator_node(state: AgentState):
 
     # Prepare RAG context summary
     rag_summary = ""
-    if rag_results:
-        rag_summary = f"\nEDUCATIONAL MATERIALS AVAILABLE ({len(rag_results)} relevant excerpts):\n"
-        for i, doc in enumerate(rag_results[:3]):  # Show summary of first 3 docs
+    if docs:
+        rag_summary = f"\nEDUCATIONAL MATERIALS AVAILABLE ({len(docs)} excerpts):\n"
+        for i, doc in enumerate(docs[:3]):
             filename = doc.metadata.get("filename", "Unknown")
-            content_preview = (
+            preview = (
                 doc.page_content[:150] + "..."
                 if len(doc.page_content) > 150
                 else doc.page_content
             )
-            rag_summary += f"- {filename}: {content_preview}\n"
+            rag_summary += f"- {filename}: {preview}\n"
 
-    ui_prompt = f"""You are a UI/UX expert creating beautiful, diverse user interfaces. Always aim for variety and visual interest!
+    # Add creativity elements
+    themes = [
+        "modern",
+        "minimalist",
+        "vibrant",
+        "professional",
+        "creative",
+        "elegant",
+        "playful",
+        "dark",
+        "light",
+        "colorful",
+    ]
+    selected_theme = random.choice(themes)
+    layout_seed = random.randint(1, 100)
 
-AVAILABLE COMPONENTS (use diverse combinations):
-1. **hero** - Large featured banner with background image, title, subtitle, and call-to-action button
-   → Best for: Main topics, landing sections, featured content
-2. **card** - Information display with title, content, optional image and badge
-   → Best for: Individual items, articles, products, detailed info
-3. **gallery** - Grid of images with captions
-   → Best for: Visual collections, portfolios, examples, showcases
-4. **list** - Organized items with icons and descriptions
-   → Best for: Steps, features, comparisons, structured data
-5. **stats** - Numerical data display with icons and labels
-   → Best for: Metrics, achievements, data points, analytics
-6. **testimonial** - Quote display with author information and avatar
-   → Best for: Reviews, quotes, user feedback, expert opinions
+    design_prompt = f"""You are a world-class UI/UX Designer creating innovative, beautiful user experiences. Your job is to create a comprehensive DESIGN PLAN (not final components yet).
 
-USER PROMPT: "{prompt}"
+AVAILABLE TOOLS FOR VISUAL ENHANCEMENT:
+1. ui_image_search_tool_fn - Search for UI inspiration images
+2. imagen_generate_tool_fn - Generate custom images (limit 1 per request)
 
-SEARCH RESULTS:
-{search_context if search_context else "No search results available - use your knowledge"}
+USER REQUEST: "{prompt}"
+DESIGN THEME: {selected_theme}
+CREATIVE SEED: {layout_seed}
+
+RESEARCH CONTEXT:
+{search_context if search_context else "No search results - use your knowledge"}
 
 AVAILABLE IMAGES:
 {image_context if image_context else "No images available"}
 
-DIVERSITY REQUIREMENTS:
-- ALWAYS use at least 3 different component types
-- Mix visual (hero, gallery) with informational (card, list) components
-- Include interactive elements when possible (stats, testimonials)
-- Vary the content structure and visual hierarchy
-- Create a cohesive but diverse user experience
+{rag_summary}
 
-INSTRUCTIONS:
-1. Create 3-5 components using DIFFERENT types for visual variety
-2. Start with a hero or gallery if the topic is visual
-3. Include stats or testimonials to add credibility and engagement
-4. Use lists for structured information and cards for detailed content
-5. Make titles concise (max 60 chars) and content readable (max 200 chars for cards)
-6. Ensure each component serves a unique purpose in the overall experience
+YOUR MISSION:
+1. FIRST: Decide if you need visual assets:
+   - Use ui_image_search_tool_fn for UI inspiration if helpful
+   - Use imagen_generate_tool_fn if a custom hero image would enhance the design (MAX 1 image)
 
-Return ONLY a valid JSON object:
+2. THEN: Create a detailed DESIGN PLAN covering:
+   - Overall visual concept and {selected_theme} theme application
+   - Component selection strategy (3-5 different types for variety)
+   - Content hierarchy and user flow
+   - Visual elements and color psychology
+   - How to integrate any research findings creatively
+   - Specific content recommendations for each component type
+
+COMPONENT TYPES AVAILABLE:
+- **hero**: Featured banner with image, title, subtitle, CTA
+- **card**: Content blocks with images, badges, descriptions  
+- **gallery**: Image collections with captions
+- **list**: Organized items with icons and descriptions
+- **stats**: Data displays with metrics and icons
+- **testimonial**: Quotes with author info and avatars
+
+DESIGN PRINCIPLES:
+- Maximize visual diversity and engagement
+- Create emotional connection with users
+- Ensure accessibility and readability
+- Balance informational and visual components
+- Apply {selected_theme} theme consistently
+- Use the creative seed {layout_seed} for unique layout decisions
+
+If you use tools, execute them first, then create your comprehensive design plan.
+Output your design plan as clear, detailed text (not JSON).
+"""
+
+    # Call UI LLM with tools - it will decide which tools to use first
+    response = ui_llm_with_tools.invoke([HumanMessage(content=design_prompt)])
+
+    # Update UI messages with the LLM response
+    ui_messages = state["ui_messages"] + [HumanMessage(content=design_prompt), response]
+
+    return {**state, "ui_messages": ui_messages}
+
+
+# Extract design plan from UI messages
+def extract_design_plan_node(state: AgentState) -> Dict[str, Any]:
+    """Extract the design plan from UI Designer's response."""
+    logging.info("Extracting design plan from UI Designer")
+
+    if "ui_messages" in state and state["ui_messages"]:
+        # Get the last AI message which should contain the design plan
+        for message in reversed(state["ui_messages"]):
+            if hasattr(message, "content") and message.content:
+                # Store the design plan in state
+                return {**state, "design_plan": message.content}
+
+    # Fallback if no design plan found
+    return {**state, "design_plan": "No design plan available"}
+
+
+async def ui_implementer_node(state: AgentState):
+    """UI Implementer converts the design plan to final JSON components."""
+    logging.info("UI Implementer creating final components")
+
+    prompt = state["prompt"]
+    design_plan = state.get("design_plan", "")
+    ui_images = state["knowledge"]["ui_images"]
+    generated_images = state["knowledge"]["generated_images"]
+    docs = state["knowledge"]["docs"]
+    search_results = state["knowledge"]["search"]
+    image_results = state["knowledge"]["images"]
+
+    # Helper function to map image prompts back to actual image data
+    def resolve_image_reference(image_ref: str) -> str:
+        """Resolve image reference to actual image data or URL."""
+        # Check if it's a generated image prompt
+        if image_ref in generated_images:
+            return generated_images[image_ref]
+        # Otherwise return as-is (could be a URL from search results)
+        return image_ref
+
+    # Prepare context summaries for reference
+    search_summary = ""
+    if search_results:
+        search_summary = f"Search Results Summary: {len(search_results)} results available including topics like: "
+        topics = [result.get("title", "")[:50] for result in search_results[:3]]
+        search_summary += ", ".join(topics)
+
+    image_summary = ""
+    if image_results:
+        image_summary = f"Images Available: {len(image_results)} images found"
+
+    ui_image_context = ""
+    if ui_images:
+        for i, img in enumerate(ui_images[:4]):
+            ui_image_context += f"UI Inspiration {i + 1}: {img.get('title', '')} - {img.get('image', '')}\n"
+
+    generated_image_context = ""
+    if generated_images:
+        available_prompts = list(generated_images.keys())
+        for i, prompt in enumerate(available_prompts):
+            generated_image_context += (
+                f"Generated Image {i + 1}: '{prompt}' (reference as: {prompt})\n"
+            )
+
+    rag_summary = ""
+    if docs:
+        rag_summary = f"Educational Materials: {len(docs)} excerpts available"
+
+    implementation_prompt = f"""You are a UI Implementation Specialist. Your job is to convert the design plan into exact JSON components.
+
+ORIGINAL USER REQUEST: "{prompt}"
+
+DESIGN PLAN TO IMPLEMENT:
+{design_plan}
+
+AVAILABLE ASSETS:
+{search_summary}
+{image_summary}
+{rag_summary}
+
+UI INSPIRATION IMAGES:
+{ui_image_context if ui_image_context else "No UI inspiration images"}
+
+GENERATED IMAGES (reference by prompt in image fields):
+{generated_image_context if generated_image_context else "No generated images"}
+
+IMPLEMENTATION REQUIREMENTS:
+1. Follow the design plan exactly as specified
+2. Create 3-5 components using DIFFERENT types for variety
+3. For generated images, use the exact prompt text as the image value (e.g., "A modern tech hero image")
+4. Make titles concise (max 60 chars) and content readable (max 200 chars for cards)
+5. Ensure visual diversity and engagement
+
+Return ONLY a valid JSON object (no markdown, no explanations):
 {{
     "components": [
         {{
@@ -423,33 +439,16 @@ Return ONLY a valid JSON object:
 }}
 
 COMPONENT SPECIFICATIONS:
-hero: {{"title": "string", "subtitle": "string", "image": "url_or_empty", "buttonText": "string", "buttonLink": "url_or_empty"}}
-card: {{"title": "string", "content": "string", "image": "url_or_empty", "badge": "string_or_empty"}}
-gallery: {{"title": "string", "images": [{{"url": "string", "caption": "string"}}]}}
+hero: {{"title": "string", "subtitle": "string", "image": "url_or_generated_prompt", "buttonText": "string", "buttonLink": "url_or_empty"}}
+card: {{"title": "string", "content": "string", "image": "url_or_generated_prompt", "badge": "string_or_empty"}}
+gallery: {{"title": "string", "images": [{{"url": "url_or_generated_prompt", "caption": "string"}}]}}
 list: {{"title": "string", "items": [{{"text": "string", "icon": "emoji"}}]}}
 stats: {{"title": "string", "data": [{{"value": "string", "label": "string", "icon": "emoji"}}]}}
-testimonial: {{"quote": "string", "author": "string", "role": "string", "avatar": "url_or_empty"}}
-
-An example is given below:
-
-{{
-    "components": [
-        {{
-            "type": "gallery",
-            "props": {{
-                "title": "My Gallery",
-                "images": [
-                    {{"url": "https://example.com/image1.jpg", "caption": "Image 1"}},
-                    {{"url": "https://example.com/image2.jpg", "caption": "Image 2"}}
-                ]
-            }}
-        }}
-    ]
-}}
+testimonial: {{"quote": "string", "author": "string", "role": "string", "avatar": "url_or_generated_prompt"}}
 """
 
     try:
-        response = llm.invoke([HumanMessage(content=ui_prompt)])
+        response = ui_llm.invoke([HumanMessage(content=implementation_prompt)])
         content = response.content.strip()
 
         if content.startswith("```json"):
@@ -460,24 +459,52 @@ An example is given below:
 
         ui_components = json.loads(content)
 
+        # Post-process components to resolve image references
+        def resolve_component_images(component):
+            """Recursively resolve image references in a component."""
+            if isinstance(component, dict):
+                for key, value in component.items():
+                    if key == "image" and isinstance(value, str):
+                        component[key] = resolve_image_reference(value)
+                    elif key == "images" and isinstance(value, list):
+                        for img_item in value:
+                            if isinstance(img_item, dict) and "url" in img_item:
+                                img_item["url"] = resolve_image_reference(
+                                    img_item["url"]
+                                )
+                    elif key == "avatar" and isinstance(value, str):
+                        component[key] = resolve_image_reference(value)
+                    elif isinstance(value, (dict, list)):
+                        resolve_component_images(value)
+            elif isinstance(component, list):
+                for item in component:
+                    resolve_component_images(item)
+
+        # Resolve all image references in the components
+        resolve_component_images(ui_components)
+
         return {
             **state,
             "final_ui": ui_components,
             "messages": state["messages"]
-            + [AIMessage(content="UI components generated successfully")],
+            + [
+                AIMessage(
+                    content="UI components implemented successfully from design plan"
+                )
+            ],
         }
 
     except Exception as e:
-        logging.error(f"UI generator error: {e}")
+        logging.error(f"UI Implementer error: {e}")
         # Fallback UI
         fallback_ui = {
             "components": [
                 {
                     "type": "card",
                     "props": {
-                        "title": "Response",
-                        "content": "Still trying to wrap GPT? Go touch some grass bro... How long havn't you showered btw?",
-                        "badge": "Generated",
+                        "title": "Design Implementation",
+                        "content": "UI generated based on creative design plan with AI-powered enhancements.",
+                        "badge": "AI Designed",
                     },
                 }
             ]
@@ -486,67 +513,58 @@ An example is given below:
             **state,
             "final_ui": fallback_ui,
             "messages": state["messages"]
-            + [AIMessage(content=f"UI generation failed, using fallback: {str(e)}")],
+            + [
+                AIMessage(content=f"UI implementation failed, using fallback: {str(e)}")
+            ],
         }
 
 
-# Routing function for the decision agent, simply returns the decision path in the state
-def route_decision(
-    state: AgentState,
-) -> Literal[
-    "search_and_images",
-    "search_only",
-    "images_only",
-    "rag_enhanced",
-    "rag_only",
-    "ui_generator",
-]:
-    """Route based on the decision agent's choice"""
-    decision_path = state.get("decision_path", "ui_generator")
-    logging.info(f"Routing to: {decision_path}")
-    return decision_path
-
-
-# Create the graph-based workflow with conditional routing
+# Create the graph-based workflow
 def create_graph_workflow():
-    """Create a graph workflow with natural conditional routing"""
     workflow = StateGraph(AgentState)
 
-    # Add nodes including RAG nodes
-    workflow.add_node("decision", decision_agent_node)
-    workflow.add_node("search_and_images", search_and_images_node)
-    workflow.add_node("search_only", search_agent_node)
-    workflow.add_node("images_only", image_agent_node)
-    workflow.add_node("rag_enhanced", rag_enhanced_node)
-    workflow.add_node("rag_only", rag_agent_node)
-    workflow.add_node("ui_generator", ui_generator_node)
+    # Add nodes
+    workflow.add_node("research", research_agent_node)
+    workflow.add_node("tools", custom_tool_node)
+    workflow.add_node("ui_designer", ui_designer_node)
+    workflow.add_node("ui_tools", ui_tool_node)
+    workflow.add_node("extract_design", extract_design_plan_node)
+    workflow.add_node("ui_implementer", ui_implementer_node)
 
-    # Set entry point
-    workflow.set_entry_point("decision")
+    # Entry starts with research
+    workflow.set_entry_point("research")
 
-    # Add conditional edges from decision agent
+    # Add conditional edges from research
     workflow.add_conditional_edges(
-        "decision",
-        route_decision,
+        "research",
+        tools_condition,
         {
-            "search_and_images": "search_and_images",
-            "search_only": "search_only",
-            "images_only": "images_only",
-            "rag_enhanced": "rag_enhanced",
-            "rag_only": "rag_only",
-            "ui_generator": "ui_generator",
+            "tools": "tools",
+            END: "ui_designer",
         },
     )
 
-    # Paths that gather data lead to ui_generator
-    workflow.add_edge("search_and_images", "ui_generator")
-    workflow.add_edge("search_only", "ui_generator")
-    workflow.add_edge("images_only", "ui_generator")
-    workflow.add_edge("rag_enhanced", "ui_generator")
-    workflow.add_edge("rag_only", "ui_generator")
+    # After research tool use, go back to research
+    workflow.add_edge("tools", "research")
 
-    # Final edge to END
-    workflow.add_edge("ui_generator", END)
+    # Add conditional edges from UI designer
+    workflow.add_conditional_edges(
+        "ui_designer",
+        ui_tools_condition,
+        {
+            "ui_tools": "ui_tools",
+            END: "extract_design",
+        },
+    )
+
+    # After UI tool use, extract design plan
+    workflow.add_edge("ui_tools", "extract_design")
+
+    # After extracting design plan, implement UI
+    workflow.add_edge("extract_design", "ui_implementer")
+
+    # End after UI implementation
+    workflow.add_edge("ui_implementer", END)
 
     return workflow.compile()
 
@@ -554,33 +572,46 @@ def create_graph_workflow():
 # Create the compiled workflow
 graph_workflow = create_graph_workflow()
 
+# NOTE: this somehow is not local it uses the mermaid api to render the graph
+# graph_workflow.get_graph().draw_mermaid_png(output_file_path="graph_workflow.png")
+
 
 async def process_prompt(prompt: str, user_id: str = "anonymous") -> Dict[str, Any]:
     """Main function to process a prompt using the graph-based workflow"""
-    logging.info(f"Processing prompt with graph workflow: {prompt}")
+    logging.info(f"Processing prompt with enhanced graph workflow: {prompt}")
 
     try:
         # Initialize the state
         initial_state = {
-            "messages": [HumanMessage(content=prompt)],
+            "messages": [
+                HumanMessage(
+                    content="You are a helpful research agent who will gather content related to the user's query using available tools. The information will be used by a UI generator to create beautiful interfaces. Gather comprehensive information and stop when you have enough for quality UI generation."
+                ),
+                HumanMessage(content=f"User prompt: {prompt}"),
+            ],
+            "ui_messages": [],
             "prompt": prompt,
-            "search_results": [],
-            "image_results": [],
-            "rag_results": [],
-            "rag_context": "",
+            "knowledge": {
+                "docs": [],
+                "search": [],
+                "images": [],
+                "ui_images": [],
+                "generated_images": {},
+            },
+            "design_plan": "",
             "final_ui": {},
             "user_id": user_id,
-            "use_rag": False,
+            "iteration_count": 0,
         }
 
-        # Run the workflow
-        result = await graph_workflow.ainvoke(initial_state)
+        # Run the workflow with recursion limit
+        result = await graph_workflow.ainvoke(initial_state, {"recursion_limit": 10})
 
-        logging.info("Graph workflow completed successfully")
+        logging.info("Enhanced graph workflow completed successfully")
         return result["final_ui"]
 
     except Exception as e:
-        logging.exception("Error in graph workflow:")
+        logging.exception("Error in enhanced graph workflow:")
         return {
             "components": [
                 {
