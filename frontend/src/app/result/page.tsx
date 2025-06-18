@@ -19,16 +19,20 @@ export default function Result() {
   const [loading, setLoading] = useState(true);
   const [components, setComponents] = useState<ComponentProps[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userPrompt, setUserPrompt] = useState("");
 
   useEffect(() => {
     const prompt = localStorage.getItem("userPrompt");
+    const userId = localStorage.getItem("userId") || "anonymous";
+
     if (prompt) {
+      setUserPrompt(prompt);
       fetch("http://localhost:8000/api/agent", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, user_id: userId }),
       })
         .then((res) => {
           if (!res.ok) {
@@ -49,40 +53,31 @@ export default function Result() {
           setLoading(false);
         });
     } else {
-      setError("No prompt found");
-      setLoading(false);
+      router.push("/");
     }
-  }, []);
+  }, [router]);
 
   const renderComponent = (comp: ComponentProps, index: number) => {
-    switch (comp.type) {
+    const { type, props } = comp;
+    const key = `${type}-${index}`;
+
+    switch (type) {
       case "card":
-        return <Card key={index} {...comp.props} />;
+        return <Card key={key} {...props} />;
       case "hero":
-        return <Hero key={index} {...comp.props} />;
+        return <Hero key={key} {...props} />;
       case "gallery":
-        return <Gallery key={index} {...comp.props} />;
+        return <Gallery key={key} {...props} />;
       case "list":
-        return <List key={index} {...comp.props} />;
+        return <List key={key} {...props} />;
       case "stats":
-        return <Stats key={index} {...comp.props} />;
+        return <Stats key={key} {...props} />;
       case "testimonial":
-        return <Testimonial key={index} {...comp.props} />;
+        return <Testimonial key={key} {...props} />;
       default:
         return (
-          <div key={index} className="card p-6">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-16 bg-gradient-to-b from-red-400 to-orange-500 rounded-full"></div>
-              <div className="flex-1">
-                <h2 className="text-2xl font-bold text-gray-800 mb-3">
-                  🚧 Unknown Component
-                </h2>
-                <p className="text-gray-600 text-lg">
-                  Component type "{comp.type}" is not supported yet, but we're
-                  working on it!
-                </p>
-              </div>
-            </div>
+          <div key={key} className="response-card">
+            <p className="text-red-600">Unknown component type: {type}</p>
           </div>
         );
     }
@@ -90,88 +85,188 @@ export default function Result() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center animate-fade-in">
-          <div className="relative">
-            <div className="w-20 h-20 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-6"></div>
-            <div
-              className="absolute inset-0 w-20 h-20 border-4 border-transparent border-t-purple-400 rounded-full animate-spin mx-auto"
-              style={{
-                animationDirection: "reverse",
-                animationDuration: "1.5s",
-              }}
-            ></div>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="border-b border-gray-200 bg-white">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">UI</span>
+              </div>
+              <h1 className="text-xl font-semibold text-gray-900">UI Agent</h1>
+            </div>
           </div>
-          <h1 className="text-2xl font-semibold text-white mb-2">
-            🎨 Creating your UI...
-          </h1>
-          <p className="text-white/70">Our AI is working its magic</p>
-        </div>
+        </header>
+
+        {/* Loading Content */}
+        <main className="chat-container">
+          <div className="py-6 space-y-4">
+            {/* User Message */}
+            <div className="flex justify-end">
+              <div className="max-w-2xl bg-blue-600 text-white rounded-2xl rounded-tr-md px-4 py-3">
+                <p>{userPrompt}</p>
+              </div>
+            </div>
+
+            {/* Loading Response */}
+            <div className="flex justify-start">
+              <div className="max-w-2xl bg-white border border-gray-200 rounded-2xl rounded-tl-md px-4 py-3">
+                <div className="flex items-center space-x-2">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"
+                      style={{ animationDelay: "0.2s" }}
+                    ></div>
+                    <div
+                      className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"
+                      style={{ animationDelay: "0.4s" }}
+                    ></div>
+                  </div>
+                  <span className="text-gray-600 text-sm">
+                    Creating your UI components...
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md animate-fade-in">
-          <div className="card p-8 text-center">
-            <div className="text-6xl mb-4">😅</div>
-            <h1 className="text-xl font-bold text-red-600 mb-4">Oops!</h1>
-            <p className="text-gray-700 mb-6">{error}</p>
-            <button
-              onClick={() => router.push("/")}
-              className="btn-primary text-white py-3 px-6 rounded-xl font-medium w-full animate-pulse-hover"
-            >
-              🔄 Try Again
-            </button>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="border-b border-gray-200 bg-white">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">UI</span>
+                </div>
+                <h1 className="text-xl font-semibold text-gray-900">
+                  UI Agent
+                </h1>
+              </div>
+              <button
+                onClick={() => router.push("/")}
+                className="btn-secondary text-sm"
+              >
+                ← New Chat
+              </button>
+            </div>
           </div>
-        </div>
+        </header>
+
+        {/* Error Content */}
+        <main className="chat-container">
+          <div className="py-6 space-y-4">
+            {/* User Message */}
+            <div className="flex justify-end">
+              <div className="max-w-2xl bg-blue-600 text-white rounded-2xl rounded-tr-md px-4 py-3">
+                <p>{userPrompt}</p>
+              </div>
+            </div>
+
+            {/* Error Response */}
+            <div className="flex justify-start">
+              <div className="max-w-2xl bg-red-50 border border-red-200 rounded-2xl rounded-tl-md px-4 py-3">
+                <div className="flex items-start space-x-2">
+                  <span className="text-red-600 text-sm">⚠️</span>
+                  <div>
+                    <p className="text-red-800 font-medium">
+                      Something went wrong
+                    </p>
+                    <p className="text-red-600 text-sm mt-1">{error}</p>
+                    <button
+                      onClick={() => router.push("/")}
+                      className="mt-3 btn-primary text-sm"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8 animate-fade-in">
-          <button
-            onClick={() => router.push("/")}
-            className="glass text-white py-3 px-6 rounded-xl font-medium hover:bg-white/30 transition-all duration-200 mb-4"
-          >
-            ← Back to Home
-          </button>
-          <h1 className="text-3xl font-bold text-white mb-2">
-            ✨ Your Generated UI
-          </h1>
-          <p className="text-white/80">Here's what our AI created for you</p>
-        </div>
-
-        {components && components.length > 0 ? (
-          <div className="space-y-6 animate-fade-in">
-            {components.map((comp, index) => renderComponent(comp, index))}
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">UI</span>
+              </div>
+              <h1 className="text-xl font-semibold text-gray-900">UI Agent</h1>
+            </div>
+            <button
+              onClick={() => router.push("/")}
+              className="btn-secondary text-sm"
+            >
+              ← New Chat
+            </button>
           </div>
-        ) : (
-          <div className="card p-8 text-center animate-fade-in">
-            <div className="text-6xl mb-4">🤔</div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">
-              No components generated
-            </h2>
-            <p className="text-gray-600">
-              The AI didn't return any components. Try a different prompt!
-            </p>
-          </div>
-        )}
-
-        <div className="mt-8 text-center">
-          <button
-            onClick={() => router.push("/")}
-            className="btn-primary text-white py-3 px-8 rounded-xl font-medium animate-pulse-hover"
-          >
-            🎨 Create Another
-          </button>
         </div>
-      </div>
+      </header>
+
+      {/* Generated UI Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="py-6">
+          {/* AI Response */}
+          <div className="flex justify-center">
+            {" "}
+            {/* Centering the content block */}
+            <div className="w-full animate-slide-up">
+              {" "}
+              {/* Ensuring it takes full available width */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-6 mb-6">
+                {" "}
+                {/* Added responsive padding and increased bottom margin */}
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✨</span>
+                  </div>
+                  <span className="text-gray-900 font-medium">
+                    UI Components Generated
+                  </span>
+                </div>
+                {components && components.length > 0 ? (
+                  <div className="component-grid">
+                    {components.map((comp, index) =>
+                      renderComponent(comp, index)
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-gray-400 text-4xl mb-2">🤔</div>
+                    <p className="text-gray-600">
+                      No components were generated. Try a different prompt!
+                    </p>
+                  </div>
+                )}
+              </div>
+              {/* Regenerate Button */}
+              <div className="text-center">
+                <button
+                  onClick={() => router.push("/")}
+                  className="btn-primary text-sm"
+                >
+                  Generate Another UI
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

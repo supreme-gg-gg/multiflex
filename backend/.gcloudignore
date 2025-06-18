@@ -1,0 +1,4 @@
+.venv/
+graph_workflow.png
+vectorstore_data/
+__pycache__/

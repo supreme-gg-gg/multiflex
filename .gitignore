@@ -203,3 +203,23 @@ dist/
 .next/
 out/
 .vercel/
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firebase-debug.*.log*
+
+# Local environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cloud Build
+.gcloud/
+
+# Google Cloud
+service-account-key.json
+gcp-key.json
+
+.DS_Store

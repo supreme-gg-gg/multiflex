@@ -1,0 +1,65 @@
+steps:
+  # Build and push backend Docker image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      ["build", "-t", "gcr.io/$PROJECT_ID/ui-agent-backend:latest", "./backend"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/ui-agent-backend:latest"]
+
+  # Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      [
+        "run",
+        "deploy",
+        "ui-agent-backend",
+        "--image",
+        "gcr.io/$PROJECT_ID/ui-agent-backend:latest",
+        "--region",
+        "us-central1",
+        "--platform",
+        "managed",
+        "--allow-unauthenticated",
+        "--port",
+        "8080",
+        "--memory",
+        "2Gi",
+        "--cpu",
+        "2",
+        "--min-instances",
+        "0",
+        "--max-instances",
+        "3",
+        "--set-env-vars",
+        "GOOGLE_API_KEY=your-google-ai-api-key",
+      ]
+
+  # Build frontend
+  - name: "node:18"
+    entrypoint: "npm"
+    args: ["install"]
+    dir: "frontend"
+
+  - name: "node:18"
+    entrypoint: "npm"
+    args: ["run", "build"]
+    dir: "frontend"
+    env:
+      - "NEXT_PUBLIC_API_URL=https://ui-agent-backend-${_CLOUD_RUN_REGION}-${PROJECT_ID}.a.run.app"
+
+  # Deploy to Firebase Hosting
+  - name: "gcr.io/$PROJECT_ID/firebase"
+    args: ["deploy", "--only", "hosting", "--project", "$PROJECT_ID"]
+    dir: "frontend"
+
+# Substitutions for variables
+substitutions:
+  _CLOUD_RUN_REGION: us-central1
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_HIGHCPU_8"
+
+timeout: "1200s"
