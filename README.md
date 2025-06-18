@@ -4,6 +4,8 @@ Experience AI-powered educational assistants that **go beyond chat—our platfor
 
 With advanced multimodal capabilities, RAG, searches, and real-time image generation, the system delivers responses enriched with images, structured data, and interactive elements—making complex topics clearer and learning more engaging.
 
+> Try it out now at [this link](https://multiflex-75bba-1cadf.web.app/)! View us on [devpost](https://devpost.com/software/multiflex?ref_content=my-projects-tab&ref_feature=my_projects) and our [demo video](https://youtu.be/Nu0qq5zvanM)
+
 **Key Features:**
 
 - Ask questions naturally about your documents or any topic, even the latest news
