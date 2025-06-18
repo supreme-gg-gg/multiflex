@@ -33,7 +33,7 @@ steps:
         "--max-instances",
         "3",
         "--set-env-vars",
-        "GOOGLE_API_KEY=your-google-ai-api-key",
+        "GOOGLE_API_KEY=your-google-ai-api-key,CORS_ORIGINS=http://localhost:3000,https://multiflex-75bba-1cadf.web.app,https://multiflex-75bba-1cadf.firebaseapp.com",
       ]
 
   # Build frontend

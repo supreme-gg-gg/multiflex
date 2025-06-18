@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_ENDPOINTS } from "../lib/api";
 
 interface ComponentProps {
   type: string;
@@ -16,7 +17,7 @@ export default function Result() {
   useEffect(() => {
     const prompt = sessionStorage.getItem("prompt");
     if (prompt) {
-      fetch("http://localhost:8000/api/agent", {
+      fetch(API_ENDPOINTS.agent, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

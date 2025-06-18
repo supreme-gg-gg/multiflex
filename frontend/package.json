@@ -1,13 +1,13 @@
 {
-  "name": "ui-agent-frontend",
+  "name": "multiflex-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && next export",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "npm run build && firebase deploy"
+    "deploy": "npm run build && firebase deploy --only hosting --project nus-hacks-75bba"
   },
   "dependencies": {
     "next": "14.0.3",

@@ -8,6 +8,7 @@ import Gallery from "../../components/Gallery";
 import List from "../../components/List";
 import Stats from "../../components/Stats";
 import Testimonial from "../../components/Testimonial";
+import { API_ENDPOINTS } from "../../lib/api";
 
 interface ComponentProps {
   type: string;
@@ -27,7 +28,7 @@ export default function Result() {
 
     if (prompt) {
       setUserPrompt(prompt);
-      fetch("http://localhost:8000/api/agent", {
+      fetch(API_ENDPOINTS.agent, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -91,9 +92,9 @@ export default function Result() {
           <div className="max-w-4xl mx-auto px-4 py-4">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">UI</span>
+                <span className="text-white font-bold text-sm">MF</span>
               </div>
-              <h1 className="text-xl font-semibold text-gray-900">UI Agent</h1>
+              <h1 className="text-xl font-semibold text-gray-900">MultiFlex</h1>
             </div>
           </div>
         </header>
@@ -144,10 +145,10 @@ export default function Result() {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">UI</span>
+                  <span className="text-white font-bold text-sm">MF</span>
                 </div>
                 <h1 className="text-xl font-semibold text-gray-900">
-                  UI Agent
+                  MultiFlex
                 </h1>
               </div>
               <button
@@ -204,9 +205,9 @@ export default function Result() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">UI</span>
+                <span className="text-white font-bold text-sm">MF</span>
               </div>
-              <h1 className="text-xl font-semibold text-gray-900">UI Agent</h1>
+              <h1 className="text-xl font-semibold text-gray-900">MultiFlex</h1>
             </div>
             <button
               onClick={() => router.push("/")}

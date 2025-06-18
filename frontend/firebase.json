@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "multiflex-75bba-1cadf",
     "public": "out",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
