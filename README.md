@@ -1,23 +1,21 @@
 # MultiFlex -- Multi-Agent Educational Platform
 
-An intelligent educational assistant that combines RAG (Retrieval-Augmented Generation), web search, and dynamic UI generation to create personalized learning experiences. Built with LangGraph multi-agent architecture, Next.js frontend, and deployed on Google Cloud Platform.
+Experience AI-powered educational assistants that **go beyond chat—our platform lets AI agents generate dynamic, visual interfaces tailored** to your learning needs. Instead of just text, the AI can present answers as cards, tables, galleries, or custom layouts, choosing the best format for each context.
 
-## What It Does
+With advanced multimodal capabilities, RAG, searches, and real-time image generation, the system delivers responses enriched with images, structured data, and interactive elements—making complex topics clearer and learning more engaging.
 
-This system is an **AI-powered educational assistant** that:
+**Key Features:**
 
-- **Ask questions in plain English** about your documents or any topic
-- **Get personalized answers** using your uploaded files (PDF, Word, PowerPoint)
-- **See web-sourced info and images** added automatically
-- **View interactive, custom UIs** for each response
-- **Receive answers with text, images, and tables**
+- Ask questions naturally about your documents or any topic, even the latest news
+- Get personalized, visually rich answers by uploading PDF, PPTX, DOCX, and image files
+- Interact with custom UIs—cards, tables, galleries, and more
 
 **Examples:**
 
-- Summarize my notes on quantum physics
-- Find calculus practice problems as cards
-- List differences between supervised and unsupervised learning
-- Show all definitions of "entropy" from my documents in a table
+- Visual summaries of your notes
+- Practice problems as interactive cards
+- Side-by-side comparisons in tables
+- Sortable lists of definitions from your files
 
 ## Architecture
 
@@ -29,7 +27,9 @@ Our full stack multi-agent application leverages cloud technologies for scalabil
 
 Our multi-agent architecture is orchestrated using LangGraph:
 
-![Agents](resources/graph_workflow.png)
+<p align="center">
+   <img src="resources/graph_workflow.png" alt="Agents" width="40%">
+</p>
 
 ### Research Agent
 
@@ -50,6 +50,13 @@ Our multi-agent architecture is orchestrated using LangGraph:
 - **Purpose**: Coordinates agent workflow and state management
 - **Features**: Tool condition routing, state persistence, iteration control
 - **Flow**: Research → UI Design → Response Generation
+
+## Demo Photos
+
+<p align="center">
+   <img src="resources/home.png" alt="Demo 1" width="90%">
+   <img src="resources/ui.png" alt="Demo 2" width="90%">
+</p>
 
 ## Technology Stack
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_ENDPOINTS } from "../../lib/api";
 
 export default function Upload() {
   const [files, setFiles] = useState<FileList | null>(null);
@@ -27,7 +28,7 @@ export default function Upload() {
       }
       formData.append("user_id", userId);
 
-      const response = await fetch("http://localhost:8000/api/upload", {
+      const response = await fetch(API_ENDPOINTS.upload, {
         method: "POST",
         body: formData,
       });

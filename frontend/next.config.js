@@ -7,7 +7,9 @@ const nextConfig = {
   },
   env: {
     NEXT_PUBLIC_API_URL:
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+      process.env.NEXT_PUBLIC_API_URL || process.env.NODE_ENV === "production"
+        ? "https://ui-agent-backend-106594148836.us-central1.run.app"
+        : "http://localhost:8000",
   },
 };
 

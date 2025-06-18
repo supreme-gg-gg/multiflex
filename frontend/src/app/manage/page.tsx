@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { API_ENDPOINTS } from "../../lib/api";
 
 export default function Manage() {
   const [userId, setUserId] = useState("demo-user");
@@ -26,9 +27,7 @@ export default function Manage() {
   const fetchDocuments = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `http://localhost:8000/api/documents/${userId}`
-      );
+      const response = await fetch(API_ENDPOINTS.documents(userId));
       const result = await response.json();
       setDocuments(result);
     } catch (error) {
@@ -48,12 +47,9 @@ export default function Manage() {
     }
 
     try {
-      const response = await fetch(
-        `http://localhost:8000/api/documents/${userId}`,
-        {
-          method: "DELETE",
-        }
-      );
+      const response = await fetch(API_ENDPOINTS.documents(userId), {
+        method: "DELETE",
+      });
       const result = await response.json();
       alert(result.message);
       fetchDocuments();
@@ -72,7 +68,7 @@ export default function Manage() {
       formData.append("query", query);
       formData.append("user_id", userId);
 
-      const response = await fetch("http://localhost:8000/api/test-rag", {
+      const response = await fetch(API_ENDPOINTS.testRag, {
         method: "POST",
         body: formData,
       });

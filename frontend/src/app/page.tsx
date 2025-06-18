@@ -87,11 +87,11 @@ export default function Home() {
                 <span className="text-white text-2xl">✨</span>
               </div>
               <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                Welcome to UI Agent
+                Welcome to MultiFlex
               </h2>
               <p className="text-gray-600 text-lg max-w-md">
-                Describe what you want to create and I'll generate beautiful UI
-                components for you
+                Yours for smarter learning: gather and present knowledge in
+                creative, personalized UI
               </p>
             </div>
 
