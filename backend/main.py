@@ -5,11 +5,14 @@ from pydantic import BaseModel
 from agent import process_prompt
 from upload import router as upload_router
 
-app = FastAPI(title="UI Agent API with RAG")
+app = FastAPI(title="MultiFlex API")
 
 # Add CORS middleware
 # Configure CORS for both development and production
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000",
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,7 +34,7 @@ app.include_router(upload_router, prefix="/api", tags=["upload"])
 
 @app.get("/")
 async def root():
-    return {"message": "UI Agent API with RAG is running"}
+    return {"message": "MultiFlex API is running"}
 
 
 @app.post("/api/agent")

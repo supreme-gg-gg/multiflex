@@ -145,11 +145,10 @@ def ui_tool_node(state: AgentState) -> Dict[str, Any]:
                 result = ui_image_search_tool_fn.invoke(tool_args)
                 state["knowledge"]["ui_images"].extend(result)
             elif tool_name == "imagen_generate_tool_fn":
-                # result = imagen_generate_tool_fn.invoke(tool_args)
-                # # Store mapping of prompt to image data
-                # image_prompt = tool_args.get("prompt", "generated_image")
-                # state["knowledge"]["generated_images"][image_prompt] = result
-                result = "nothing is generated yet"
+                # Imagen disabled to prevent token overflow
+                result = (
+                    "Image generation disabled - use ui_image_search_tool_fn instead"
+                )
 
             logging.info(f"UI Tool '{tool_name}' executed with args: {tool_args}")
 
@@ -280,8 +279,7 @@ async def ui_designer_node(state: AgentState):
     design_prompt = f"""You are a world-class UI/UX Designer creating innovative, beautiful user experiences. Your job is to create a comprehensive DESIGN PLAN (not final components yet).
 
 AVAILABLE TOOLS FOR VISUAL ENHANCEMENT:
-1. ui_image_search_tool_fn - Search for UI inspiration images
-2. imagen_generate_tool_fn - Generate custom images (limit 1 per request)
+1. ui_image_search_tool_fn - Search for UI inspiration images and visual assets
 
 USER REQUEST: "{prompt}"
 DESIGN THEME: {selected_theme}
@@ -296,9 +294,8 @@ AVAILABLE IMAGES:
 {rag_summary}
 
 YOUR MISSION:
-1. FIRST: Decide if you need visual assets:
-   - Use ui_image_search_tool_fn for UI inspiration if helpful
-   - Use imagen_generate_tool_fn if a custom hero image would enhance the design (MAX 1 image)
+1. FIRST: Search for visual assets if needed:
+   - Use ui_image_search_tool_fn to find relevant images for your design
 
 2. THEN: Create a detailed DESIGN PLAN covering:
    - Overall visual concept and {selected_theme} theme application
@@ -370,7 +367,9 @@ async def ui_implementer_node(state: AgentState):
         """Resolve image reference to actual image data or URL."""
         # Check if it's a generated image prompt
         if image_ref in generated_images:
-            return generated_images[image_ref]
+            # Don't return large base64 data - just return a placeholder
+            # The actual image data will be resolved later in post-processing
+            return f"[GENERATED_IMAGE:{image_ref}]"
         # Otherwise return as-is (could be a URL from search results)
         return image_ref
 
@@ -380,10 +379,14 @@ async def ui_implementer_node(state: AgentState):
         search_summary = f"Search Results Summary: {len(search_results)} results available including topics like: "
         topics = [result.get("title", "")[:50] for result in search_results[:3]]
         search_summary += ", ".join(topics)
+    else:
+        search_summary = "No search results available (may be due to rate limiting) - use your knowledge"
 
     image_summary = ""
     if image_results:
         image_summary = f"Images Available: {len(image_results)} images found"
+    else:
+        image_summary = "No images available (may be due to rate limiting) - components can use empty image fields"
 
     ui_image_context = ""
     if ui_images:
@@ -402,12 +405,23 @@ async def ui_implementer_node(state: AgentState):
     if docs:
         rag_summary = f"Educational Materials: {len(docs)} excerpts available"
 
+    # Truncate design plan if too long to prevent token overflow
+    max_design_plan_length = 10000  # Reasonable limit for design plan
+    truncated_design_plan = design_plan
+    if len(design_plan) > max_design_plan_length:
+        logging.warning(
+            f"Design plan too long ({len(design_plan)} chars), truncating to {max_design_plan_length} chars"
+        )
+        truncated_design_plan = (
+            design_plan[:max_design_plan_length] + "\n[... truncated for brevity ...]"
+        )
+
     implementation_prompt = f"""You are a UI Implementation Specialist. Your job is to convert the design plan into exact JSON components.
 
 ORIGINAL USER REQUEST: "{prompt}"
 
 DESIGN PLAN TO IMPLEMENT:
-{design_plan}
+{truncated_design_plan}
 
 AVAILABLE ASSETS:
 {search_summary}
@@ -417,13 +431,13 @@ AVAILABLE ASSETS:
 UI INSPIRATION IMAGES:
 {ui_image_context if ui_image_context else "No UI inspiration images"}
 
-GENERATED IMAGES (reference by prompt in image fields):
-{generated_image_context if generated_image_context else "No generated images"}
+SEARCHED IMAGES (use URLs from ui_image_search_tool_fn results):
+{ui_image_context if ui_image_context else "No UI inspiration images found (may be due to rate limiting) - proceed without them"}
 
 IMPLEMENTATION REQUIREMENTS:
 1. Follow the design plan exactly as specified
 2. Create 3-5 components using DIFFERENT types for variety
-3. For generated images, use the exact prompt text as the image value (e.g., "A modern tech hero image")
+3. For images, use URLs from search results or leave empty if no suitable images found
 4. Make titles concise (max 60 chars) and content readable (max 200 chars for cards)
 5. Ensure visual diversity and engagement
 
@@ -440,12 +454,12 @@ Return ONLY a valid JSON object (no markdown, no explanations):
 }}
 
 COMPONENT SPECIFICATIONS:
-hero: {{"title": "string", "subtitle": "string", "image": "url_or_generated_prompt", "buttonText": "string", "buttonLink": "url_or_empty"}}
-card: {{"title": "string", "content": "string", "image": "url_or_generated_prompt", "badge": "string_or_empty"}}
-gallery: {{"title": "string", "images": [{{"url": "url_or_generated_prompt", "caption": "string"}}]}}
+hero: {{"title": "string", "subtitle": "string", "image": "url_or_empty", "buttonText": "string", "buttonLink": "url_or_empty"}}
+card: {{"title": "string", "content": "string", "image": "url_or_empty", "badge": "string_or_empty"}}
+gallery: {{"title": "string", "images": [{{"url": "image_url", "caption": "string"}}]}}
 list: {{"title": "string", "items": [{{"text": "string", "icon": "emoji"}}]}}
 stats: {{"title": "string", "data": [{{"value": "string", "label": "string", "icon": "emoji"}}]}}
-testimonial: {{"quote": "string", "author": "string", "role": "string", "avatar": "url_or_generated_prompt"}}
+testimonial: {{"quote": "string", "author": "string", "role": "string", "avatar": "url_or_empty"}}
 """
 
     try:
@@ -460,29 +474,50 @@ testimonial: {{"quote": "string", "author": "string", "role": "string", "avatar"
 
         ui_components = json.loads(content)
 
-        # Post-process components to resolve image references
-        def resolve_component_images(component):
-            """Recursively resolve image references in a component."""
+        # Post-process components to resolve image references (final resolution)
+        def resolve_final_images(component):
+            """Recursively resolve placeholder image references to actual image data."""
             if isinstance(component, dict):
                 for key, value in component.items():
                     if key == "image" and isinstance(value, str):
-                        component[key] = resolve_image_reference(value)
+                        if value.startswith("[GENERATED_IMAGE:") and value.endswith(
+                            "]"
+                        ):
+                            # Extract the prompt from the placeholder
+                            prompt = value[17:-1]  # Remove "[GENERATED_IMAGE:" and "]"
+                            if prompt in generated_images:
+                                component[key] = generated_images[prompt]
+                            else:
+                                component[key] = ""  # Fallback to empty if not found
                     elif key == "images" and isinstance(value, list):
                         for img_item in value:
                             if isinstance(img_item, dict) and "url" in img_item:
-                                img_item["url"] = resolve_image_reference(
-                                    img_item["url"]
-                                )
+                                url_value = img_item["url"]
+                                if url_value.startswith(
+                                    "[GENERATED_IMAGE:"
+                                ) and url_value.endswith("]"):
+                                    prompt = url_value[17:-1]
+                                    if prompt in generated_images:
+                                        img_item["url"] = generated_images[prompt]
+                                    else:
+                                        img_item["url"] = ""
                     elif key == "avatar" and isinstance(value, str):
-                        component[key] = resolve_image_reference(value)
+                        if value.startswith("[GENERATED_IMAGE:") and value.endswith(
+                            "]"
+                        ):
+                            prompt = value[17:-1]
+                            if prompt in generated_images:
+                                component[key] = generated_images[prompt]
+                            else:
+                                component[key] = ""
                     elif isinstance(value, (dict, list)):
-                        resolve_component_images(value)
+                        resolve_final_images(value)
             elif isinstance(component, list):
                 for item in component:
-                    resolve_component_images(item)
+                    resolve_final_images(item)
 
-        # Resolve all image references in the components
-        resolve_component_images(ui_components)
+        # Resolve all image placeholders to actual image data
+        resolve_final_images(ui_components)
 
         return {
             **state,
