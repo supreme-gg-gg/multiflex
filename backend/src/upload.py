@@ -3,7 +3,7 @@
 import os
 import tempfile
 import logging
-from typing import List, Dict, Any
+from typing import List
 from pathlib import Path
 
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException

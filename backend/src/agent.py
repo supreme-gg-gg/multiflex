@@ -145,10 +145,11 @@ def ui_tool_node(state: AgentState) -> Dict[str, Any]:
                 result = ui_image_search_tool_fn.invoke(tool_args)
                 state["knowledge"]["ui_images"].extend(result)
             elif tool_name == "imagen_generate_tool_fn":
-                result = imagen_generate_tool_fn.invoke(tool_args)
-                # Store mapping of prompt to image data
-                image_prompt = tool_args.get("prompt", "generated_image")
-                state["knowledge"]["generated_images"][image_prompt] = result
+                # result = imagen_generate_tool_fn.invoke(tool_args)
+                # # Store mapping of prompt to image data
+                # image_prompt = tool_args.get("prompt", "generated_image")
+                # state["knowledge"]["generated_images"][image_prompt] = result
+                result = "nothing is generated yet"
 
             logging.info(f"UI Tool '{tool_name}' executed with args: {tool_args}")
 

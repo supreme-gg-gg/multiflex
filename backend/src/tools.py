@@ -7,9 +7,6 @@ from langchain.schema import Document
 from rag_manager import rag_manager
 from google.genai import types
 from google import genai
-import base64
-import io
-from PIL import Image
 
 # Initialize search tools
 search_tool = DuckDuckGoSearchResults(output_format="list", max_results=5)
