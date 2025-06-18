@@ -1,6 +1,6 @@
-# MultiFlex -- Multi-Agent Educational Platform
+# MultiFlex
 
-Experience AI-powered educational assistants that **go beyond chat—our platform lets AI agents generate dynamic, visual interfaces tailored** to your learning needs. Instead of just text, the AI can present answers as cards, tables, galleries, or custom layouts, choosing the best format for each context.
+Experience AI agents that **go beyond chat — our platform lets AI generate dynamic, visual interfaces tailored** to your question. We want to challenge how search and information is traditionally presented in AI systems. Instead of just text, the AI can present answers as cards, tables, galleries, or custom layouts, choosing the best format for each context.
 
 With advanced multimodal capabilities, RAG, searches, and real-time image generation, the system delivers responses enriched with images, structured data, and interactive elements—making complex topics clearer and learning more engaging.
 
