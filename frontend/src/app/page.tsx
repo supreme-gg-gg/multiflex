@@ -126,7 +126,7 @@ export default function Home() {
                   type="text"
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
-                  className="w-full resize-none bg-transparent placeholder-gray-500"
+                  className="w-full border-0 resize-none bg-transparent placeholder-gray-500"
                   placeholder="Enter your user ID for personalized responses"
                   disabled={isSubmitting}
                 />
@@ -137,7 +137,7 @@ export default function Home() {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  className="w-full border-0 focus:ring-0 resize-none bg-transparent placeholder-gray-500 text-gray-900"
+                  className="w-full border-0 resize-none bg-transparent placeholder-gray-500 text-gray-900"
                   placeholder="Ask a question and I'll answer it like never before..."
                   rows={3}
                   disabled={isSubmitting}
@@ -181,7 +181,7 @@ export default function Home() {
                         Creating...
                       </span>
                     ) : (
-                      "Think"
+                      "Search and Create"
                     )}
                   </button>
                 </div>
