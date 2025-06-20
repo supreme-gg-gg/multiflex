@@ -1,10 +1,16 @@
 import os
-from fastapi import FastAPI, HTTPException, WebSocket
+import json
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agent import process_prompt
 from upload import router as upload_router
-from html_agent import generate_initial_html, process_interaction
+from html_agent_react import process_html_request, process_followup_request
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="MultiFlex API")
 
@@ -29,6 +35,12 @@ class PromptRequest(BaseModel):
     user_id: str = "anonymous"
 
 
+class ChatMessage(BaseModel):
+    message: str
+    session_id: str = None
+    user_id: str = "anonymous"
+
+
 # Include upload router
 app.include_router(upload_router, prefix="/api", tags=["upload"])
 
@@ -49,56 +61,132 @@ async def agent_endpoint(request: PromptRequest):
 
 @app.websocket("/ws/agent")
 async def websocket_endpoint(websocket: WebSocket):
-    print("🔌 WebSocket connection attempt")
+    logger.info("🔌 WebSocket connection attempt")
     await websocket.accept()
-    print("✅ WebSocket connection accepted")
+    logger.info("✅ WebSocket connection accepted")
 
-    html = ""
+    session_id = None
+    current_html = ""
+
     try:
         # Receive the initial prompt
-        print("📥 Waiting for initial prompt...")
+        logger.info("📥 Waiting for initial prompt...")
         initial_data = await websocket.receive_json()
         prompt = initial_data.get("prompt")
-        print(f"📋 Received initial prompt: {prompt}")
+        user_id = initial_data.get("user_id", "anonymous")
+        logger.info(f"📋 Received initial prompt: {prompt}")
 
         if not prompt:
-            print("❌ No prompt provided, closing connection")
+            logger.warning("❌ No prompt provided, closing connection")
             await websocket.close(code=1008, reason="Prompt is required")
             return
 
-        # Generate and send the initial HTML
-        print("🎨 Generating initial HTML...")
-        html = generate_initial_html(prompt)
-        print(f"📤 Sending initial HTML (length: {len(html)})")
-        await websocket.send_text(html)
-        print("✅ Initial HTML sent successfully")
+        # Generate and send the initial HTML using new agent
+        logger.info("🎨 Generating initial HTML with integrated agent...")
+        result = await process_html_request(prompt, user_id)
 
-        # Listen for user interactions
-        print("👂 Listening for user iteractions...")
+        if result["success"]:
+            current_html = result["html_content"]
+            session_id = result["session_id"]
+
+            # Send initial response
+            response = {
+                "type": "html_update",
+                "html_content": current_html,
+                "session_id": session_id,
+            }
+            await websocket.send_text(json.dumps(response))
+            logger.info(f"✅ Initial HTML sent successfully (session: {session_id})")
+        else:
+            # Send error response
+            error_response = {
+                "type": "error",
+                "message": result.get("error", "Failed to generate HTML"),
+            }
+            await websocket.send_text(json.dumps(error_response))
+            return
+
+        # Listen for follow-up messages and interactions
+        logger.info("👂 Listening for follow-up messages...")
         while True:
             try:
-                print("⏳ Waiting for interaction...")
-                interaction = await websocket.receive_json()
-                print(f"🎯 Received interaction: {interaction}")
+                logger.info("⏳ Waiting for message...")
+                message_data = await websocket.receive_json()
+                logger.info(f"📨 Received message: {message_data}")
 
-                # Generate a full updated HTML page
-                print("🔄 Processing interaction...")
-                html = process_interaction(interaction, html)
-                print(f"📤 Sending updated HTML (length: {len(html)})")
-                await websocket.send_text(html)
-                print("✅ Updated HTML sent successfully")
+                message_type = message_data.get("type", "unknown")
 
-            except Exception as interaction_error:
-                print(f"❌ Interaction error: {interaction_error}")
+                if message_type == "chat_message":
+                    # Handle follow-up chat message
+                    followup_message = message_data.get("message")
+                    if followup_message and session_id:
+                        logger.info(f"💬 Processing follow-up: {followup_message}")
+
+                        # Process follow-up request
+                        result = await process_followup_request(
+                            followup_message, session_id, current_html, user_id
+                        )
+
+                        if result["success"]:
+                            current_html = result["html_content"]
+                            response = {
+                                "type": "html_update",
+                                "html_content": current_html,
+                                "session_id": session_id,
+                            }
+                        else:
+                            response = {
+                                "type": "error",
+                                "message": result.get(
+                                    "error", "Failed to process follow-up"
+                                ),
+                            }
+
+                        await websocket.send_text(json.dumps(response))
+                        logger.info("✅ Follow-up response sent")
+
+                elif message_type == "interaction":
+                    # Handle UI interactions (legacy support)
+                    logger.info("🎯 Received UI interaction (legacy mode)")
+                    # For now, treat interactions as chat messages
+                    action = message_data.get("action", "click")
+                    element_id = message_data.get("element_id", "unknown")
+                    interaction_text = f"User {action} on element {element_id}"
+
+                    if session_id:
+                        result = await process_followup_request(
+                            interaction_text, session_id, current_html, user_id
+                        )
+
+                        if result["success"]:
+                            current_html = result["html_content"]
+                            response = {
+                                "type": "html_update",
+                                "html_content": current_html,
+                                "session_id": session_id,
+                            }
+                            await websocket.send_text(json.dumps(response))
+                            logger.info("✅ Interaction response sent")
+
+            except WebSocketDisconnect:
+                logger.info("🔌 WebSocket client disconnected")
                 break
+            except Exception as message_error:
+                logger.error(f"❌ Message processing error: {message_error}")
+                error_response = {"type": "error", "message": str(message_error)}
+                await websocket.send_text(json.dumps(error_response))
 
+    except WebSocketDisconnect:
+        logger.info("🔌 WebSocket disconnected during initial setup")
     except Exception as e:
-        print(f"❌ WebSocket error: {e}")
+        logger.error(f"❌ WebSocket error: {e}")
         import traceback
 
         traceback.print_exc()
     finally:
-        print("🔌 Closing WebSocket connection")
+        logger.info("🔌 Closing WebSocket connection")
+        if session_id:
+            logger.info(f"Session {session_id} ended")
         try:
             await websocket.close()
         except:

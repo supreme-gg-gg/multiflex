@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import ChatInterface from "../../components/ChatInterface";
 
 export default function Result() {
   const router = useRouter();
@@ -10,6 +11,8 @@ export default function Result() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -51,17 +54,43 @@ export default function Result() {
             ws.current.readyState === WebSocket.OPEN
           ) {
             console.log("Sending initial prompt:", prompt);
-            ws.current.send(JSON.stringify({ prompt }));
+            ws.current.send(
+              JSON.stringify({
+                prompt,
+                user_id: "anonymous",
+              })
+            );
           } else {
             console.log("Reconnected - not sending initial prompt again");
           }
         };
 
         ws.current.onmessage = (event) => {
-          console.log("Received HTML from agent");
-          setHtmlContent(event.data);
-          setLoading(false);
-          setConnected(true);
+          console.log("Received message from agent");
+          setProcessing(false);
+
+          try {
+            const response = JSON.parse(event.data);
+            console.log("Parsed response:", response);
+
+            if (response.type === "html_update") {
+              setHtmlContent(response.html_content);
+              if (response.session_id) {
+                setSessionId(response.session_id);
+              }
+              setLoading(false);
+              setConnected(true);
+            } else if (response.type === "error") {
+              setError(response.message || "Unknown error occurred");
+              setLoading(false);
+            }
+          } catch (parseError) {
+            // Fallback for plain text responses (legacy support)
+            console.log("Received plain text response, treating as HTML");
+            setHtmlContent(event.data);
+            setLoading(false);
+            setConnected(true);
+          }
         };
 
         ws.current.onerror = (event) => {
@@ -117,129 +146,53 @@ export default function Result() {
     };
   }, [router]);
 
+  // Send chat message handler
+  const handleSendMessage = (message: string) => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      console.error("WebSocket not available for sending message");
+      return;
+    }
+
+    setProcessing(true);
+
+    const payload = {
+      type: "chat_message",
+      message: message,
+      session_id: sessionId,
+      user_id: "anonymous",
+    };
+
+    console.log("Sending chat message:", payload);
+    ws.current.send(JSON.stringify(payload));
+  };
+
+  // Legacy interaction handler (simplified)
   useEffect(() => {
-    console.log("Event listener setup useEffect triggered");
-    console.log("contentRef.current:", !!contentRef.current);
-    console.log("htmlContent length:", htmlContent?.length || 0);
-
     if (contentRef.current && htmlContent) {
-      console.log("🔧 Setting up event listeners on content container");
+      const handleClick = (event: Event) => {
+        const target = event.target as HTMLElement;
 
-      // Generic handler for meaningful interactions
-      const sendInteraction = (
-        action: string,
-        element: HTMLElement,
-        value?: any
-      ) => {
-        console.log(
-          `🚀 Attempting to send interaction - Action: ${action}, Element: ${element.tagName}, ID: ${element.id}`
-        );
-
-        if (!element.id) {
-          console.warn("⚠️ Element has no ID, skipping interaction");
-          return;
-        }
-
-        if (!ws.current) {
-          console.error("❌ WebSocket not available");
-          return;
-        }
-
-        if (ws.current.readyState !== WebSocket.OPEN) {
-          console.error("❌ WebSocket not open, state:", ws.current.readyState);
-          return;
-        }
-
-        try {
-          const payload: any = {
-            action,
-            element_id: element.id,
-            element_type: element.tagName.toLowerCase(),
+        // Only handle clicks on elements with IDs
+        if (target.id && ws.current?.readyState === WebSocket.OPEN) {
+          const payload = {
+            type: "interaction",
+            action: "click",
+            element_id: target.id,
+            element_type: target.tagName.toLowerCase(),
           };
 
-          if (value !== undefined) {
-            payload.value = value;
-          }
-
-          console.log("📤 Sending WebSocket message:", payload);
+          console.log("Sending interaction:", payload);
           ws.current.send(JSON.stringify(payload));
-          console.log("✅ Successfully sent interaction:", payload);
-        } catch (error) {
-          console.error("❌ Failed to send interaction:", error);
         }
       };
 
-      // Universal event handler with extensive logging
-      const handleAllEvents = (event: Event) => {
-        const target = event.target as HTMLElement;
-        console.log(`🎯 Event detected: ${event.type}`, {
-          tag: target.tagName,
-          id: target.id,
-          className: target.className,
-          type: (target as any).type,
-          value: (target as any).value,
-        });
-
-        // Handle different event types
-        if (event.type === "click") {
-          console.log("🖱️ Processing click event");
-          if (target.id) {
-            sendInteraction("click", target);
-          } else {
-            console.warn("Clicked element has no ID:", target);
-          }
-        } else if (event.type === "change") {
-          console.log("📝 Processing change event");
-          if (target.id) {
-            sendInteraction("change", target, (target as any).value);
-          } else {
-            console.warn("Changed element has no ID:", target);
-          }
-        } else if (event.type === "submit") {
-          console.log("📤 Processing submit event");
-          if (target.id) {
-            sendInteraction("submit", target);
-          } else {
-            console.warn("Submitted form has no ID:", target);
-          }
-        }
-      };
-
-      // Add event listeners with logging
-      console.log("➕ Adding event listeners to content container");
-
-      // Use only one set of event listeners to avoid duplicates
-      contentRef.current.addEventListener("click", handleAllEvents, false);
-      contentRef.current.addEventListener("change", handleAllEvents, false);
-      contentRef.current.addEventListener("submit", handleAllEvents, false);
-
-      console.log("✅ Event listeners added successfully");
+      contentRef.current.addEventListener("click", handleClick, false);
 
       return () => {
-        console.log("🧹 Cleaning up event listeners");
         if (contentRef.current) {
-          contentRef.current.removeEventListener(
-            "click",
-            handleAllEvents,
-            false
-          );
-          contentRef.current.removeEventListener(
-            "change",
-            handleAllEvents,
-            false
-          );
-          contentRef.current.removeEventListener(
-            "submit",
-            handleAllEvents,
-            false
-          );
+          contentRef.current.removeEventListener("click", handleClick, false);
         }
       };
-    } else {
-      console.log("⏭️ Skipping event listener setup:", {
-        hasContentRef: !!contentRef.current,
-        hasHtmlContent: !!htmlContent,
-      });
     }
   }, [htmlContent]);
 
@@ -285,7 +238,7 @@ export default function Result() {
             </div>
             <button
               onClick={() => router.push("/")}
-              className="btn-secondary text-sm"
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border transition-colors text-sm font-medium"
             >
               ← New Chat
             </button>
@@ -300,8 +253,11 @@ export default function Result() {
         </div>
       )}
 
-      {/* Large Canvas Area - Let the agent cook here */}
-      <main className="w-full h-[calc(100vh-60px)] bg-white">
+      {/* Main Content Area */}
+      <main
+        className="flex-1 bg-white"
+        style={{ height: "calc(100vh - 76px)" }}
+      >
         {htmlContent ? (
           <div
             ref={contentRef}
@@ -320,13 +276,20 @@ export default function Result() {
           <div className="w-full h-full flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">
-                Generating your real-time UI...
-              </p>
+              <p className="mt-4 text-gray-600">Generating your HTML page...</p>
             </div>
           </div>
         )}
       </main>
+
+      {/* Floating Chat Interface */}
+      {htmlContent && (
+        <ChatInterface
+          onSendMessage={handleSendMessage}
+          isConnected={connected}
+          isProcessing={processing}
+        />
+      )}
     </div>
   );
 }

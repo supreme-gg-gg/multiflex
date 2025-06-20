@@ -168,3 +168,38 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Chat Interface Styles */
+.chat-interface {
+  z-index: 1000;
+}
+
+.chat-expanded {
+  max-height: 320px;
+}
+
+.chat-message {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Layout adjustments for chat interface */
+.main-content-with-chat {
+  height: calc(100vh - 120px); /* Account for header and chat interface */
+}
+
+/* Ensure proper spacing for fixed chat interface */
+.content-with-chat-padding {
+  padding-bottom: 80px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .main-content-with-chat {
+    height: calc(100vh - 140px);
+  }
+
+  .content-with-chat-padding {
+    padding-bottom: 100px;
+  }
+}
