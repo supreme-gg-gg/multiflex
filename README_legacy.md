@@ -269,3 +269,4 @@ Upload documents for RAG processing.
 ---
 
 Built with ❤️ for educational AI applications. This project demonstrates advanced RAG techniques, multi-agent AI workflows, and dynamic UI generation for personalized learning experiences.
+# MCP-Project
