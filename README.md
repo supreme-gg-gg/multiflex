@@ -1,5 +1,8 @@
 # MultiFlex
 
+> [!WARNING]
+> **This project is no longer maintained!** Use it at your own risk and everything is provided **AS IS**. You may use this proof-of-concept prototype in academic or commercial work as long as the original creators are credited.
+
 Experience AI agents that **go beyond chat — our platform lets AI generate dynamic, visual interfaces tailored** to your question. We want to challenge how search and information is traditionally presented in AI systems. Instead of just text, the AI can present answers as cards, tables, galleries, or custom layouts, choosing the best format for each context.
 
 With advanced multimodal capabilities, RAG, searches, and real-time image generation, the system delivers responses enriched with images, structured data, and interactive elements—making complex topics clearer and learning more engaging.
