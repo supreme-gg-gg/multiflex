@@ -1,26 +1,18 @@
 # MultiFlex
 
+We want to challenge how search and information is traditionally presented in AI systems. That's why we built AI agents that **go beyond chat interface — our platform lets AI generate dynamic, visual interfaces tailored** to your question.
+
+The vision was to build agents that replace traditional search, with a focus on investigating how agents can dynamically create user-interfaces for different purposes such as presenting information, running simulations, handling user interactions, etc by writing and updating code in real time. Instead of restricting agents to chat interfaces, we let them unleash their creativity and context-awareness. We weren't able to find good enough models at the time (that balances robustness and latency) and ran out of time at the hackathon, **but the same vision was later built by the team behind Google Search, [in their Gemini 3.0 release video](https://youtu.be/uYQGrK55gxQ?si=HcjwyVGd7VeifxYJ)**. DeepMind released a [research demo on Gemini 2.5 called "just-in-time generative UI"](https://developers.googleblog.com/en/simulating-a-neural-operating-system-with-gemini-2-5-flash-lite/) with the exact same vision as well one week after our hackathon.
+
 > [!WARNING]
-> **This project is no longer maintained!** Use it at your own risk and everything is provided **AS IS**. You may use this proof-of-concept prototype in academic or commercial work as long as the original creators are credited.
+> **This project is no longer maintained!** This is a proof-of-concept prototype that may not work in production.
 
-Experience AI agents that **go beyond chat — our platform lets AI generate dynamic, visual interfaces tailored** to your question. We want to challenge how search and information is traditionally presented in AI systems. Instead of just text, the AI can present answers as cards, tables, galleries, or custom layouts, choosing the best format for each context.
-
-With advanced multimodal capabilities, RAG, searches, and real-time image generation, the system delivers responses enriched with images, structured data, and interactive elements—making complex topics clearer and learning more engaging.
-
-> Try it out now at [this link](https://multiflex-75bba-1cadf.web.app/)! View us on [devpost](https://devpost.com/software/multiflex?ref_content=my-projects-tab&ref_feature=my_projects) and our [demo video](https://youtu.be/Nu0qq5zvanM)
+> View us on [Devpost (NUS Hacks)](https://devpost.com/software/multiflex?ref_content=my-projects-tab&ref_feature=my_projects) and our [demo video](https://youtu.be/Nu0qq5zvanM)
 
 **Key Features:**
 
-- Ask questions naturally about your documents or any topic, even the latest news
-- Get personalized, visually rich answers by uploading PDF, PPTX, DOCX, and image files
-- Interact with custom UIs—cards, tables, galleries, and more
-
-**Examples:**
-
-- Visual summaries of your notes
-- Practice problems as interactive cards
-- Side-by-side comparisons in tables
-- Sortable lists of definitions from your files
+- Instead of just text, the AI can present answers as cards, tables, galleries, or custom layouts, choosing the best format for each context.
+- With advanced multimodal capabilities, RAG, searches, and real-time image generation, the system delivers responses enriched with images, structured data, and interactive elements—making complex topics clearer and learning more engaging.
 
 ## Architecture
 
@@ -129,13 +121,6 @@ nus-hacks/
 
 ### Local Setup
 
-#### Prerequisites
-
-- **Node.js 18+** and npm
-- **Python 3.11+** and pip
-- **Google API Key** (for Gemini and embeddings)
-- **Git** for version control
-
 #### Backend Setup
 
 1. **Navigate to backend directory**:
@@ -210,14 +195,6 @@ nus-hacks/
 
    Frontend will be available at `http://localhost:3000`
 
-#### Development Workflow
-
-1. **Start both servers** in separate terminals
-2. **Upload documents** via the Upload page (`/upload`)
-3. **Test queries** using the main interface
-4. **View dynamic responses** on the Results page (`/result`)
-5. **Manage documents** via the Management page (`/manage`)
-
 #### API Testing
 
 Test the backend directly:
@@ -227,49 +204,3 @@ curl -X POST "http://localhost:8000/api/agent" \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Explain quantum physics", "user_id": "test-user"}'
 ```
-
-### API Documentation
-
-#### POST `/api/agent`
-
-Process user queries and generate dynamic UI responses.
-
-**Request:**
-
-```json
-{
-  "prompt": "Explain machine learning concepts from my notes",
-  "user_id": "student-123"
-}
-```
-
-**Response:**
-
-```json
-{
-  "ui_type": "card_list",
-  "data": [...],
-  "images": [...],
-  "generated_images": {...}
-}
-```
-
-#### POST `/api/upload`
-
-Upload documents for RAG processing.
-
-**Request:** Multipart form with file upload
-
-**Response:**
-
-```json
-{
-  "message": "Documents processed successfully",
-  "file_count": 3
-}
-```
-
----
-
-Built with ❤️ for educational AI applications. This project demonstrates advanced RAG techniques, multi-agent AI workflows, and dynamic UI generation for personalized learning experiences.
-# MCP-Project
